@@ -1,23 +1,15 @@
-## Usage
+# Hello World Example
 
-You can run the Worker defined by your new project by executing `wrangler dev` in this
-directory. This will start up an HTTP server and will allow you to iterate on your
-Worker without having to restart `wrangler`.
+Warning: Python support in Workers is experimental and things will break. This
+example is meant for reference only right now; you should be prepared to update
+your code between now and official release time as APIs may change.
 
-### Types and autocomplete
+## How to Run
 
-This project also includes a pyproject.toml with some requirements which
-set up autocomplete and type hints for this Python Workers project.
+First ensure that `uv` is installed:
+https://docs.astral.sh/uv/getting-started/installation/#standalone-installer
 
-To get these installed you'll need `uv`, which you can install by following
-https://docs.astral.sh/uv/getting-started/installation/.
+Now, if you run `uv run pywrangler dev` within this directory, it should use the config
+in `wrangler.jsonc` to run the example.
 
-Once `uv` is installed, you can run the following:
-
-```
-uv venv
-uv sync
-```
-
-Then point your editor's Python plugin at the `.venv` directory. You should then have working
-autocomplete and type information in your editor.
+You can also run `uv run pywrangler deploy` to deploy the example.
