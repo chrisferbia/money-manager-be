@@ -1,7 +1,7 @@
 [project]
-name = "hello-python"
+name = "money-manager-be"
 version = "0.1.0"
-description = "Python hello world worker"
+description = "Python money manager worker"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []
