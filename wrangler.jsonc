@@ -8,5 +8,12 @@
 	],
 	"observability": {
 		"enabled": true
-	}
+	},
+	"d1_databases": [
+		{
+			"binding": "money_manager",
+			"database_name": "money-manager",
+			"database_id": "7bdd4d22-65d9-4ec8-8652-fdbb3833e9a0"
+		}
+	]
 }
