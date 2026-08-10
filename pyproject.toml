@@ -4,10 +4,17 @@ version = "0.1.0"
 description = "Python money manager worker"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "fastapi",
+]
 
 [dependency-groups]
 dev = [
     "workers-py",
-    "workers-runtime-sdk"
+    "workers-runtime-sdk",
+    "pytest",
+    "requests",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
