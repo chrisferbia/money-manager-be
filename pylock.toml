@@ -28,6 +28,19 @@ version = "3.18"
 wheels = [{ url = "https://files.pythonhosted.org/packages/1e/5e/d4e9f1a599fb8e573b7b87160658329fbf28d19eac2718f51fc3def3aa5a/idna-3.18-py3-none-any.whl", upload-time = 2026-06-02T14:34:06Z, size = 65455, hashes = { sha256 = "7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2" } }]
 
 [[packages]]
+name = "jinja2"
+version = "3.1.6"
+wheels = [
+    { url = "https://cdn.jsdelivr.net/pyodide/v0.28.3/full/jinja2-3.1.6-py3-none-any.whl", hashes = { sha256 = "24fc60a3ea3669f4d0d69a82f4b8032188b61ae1840dcb5dbe7525b6613ebbdd" } },
+    { url = "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl", hashes = { sha256 = "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67" } },
+]
+
+[[packages]]
+name = "markupsafe"
+version = "3.0.2"
+wheels = [{ url = "https://cdn.jsdelivr.net/pyodide/v0.28.3/full/markupsafe-3.0.2-cp313-cp313-pyodide_2025_0_wasm32.whl", hashes = { sha256 = "31a48bf0c5914d64d442175520d803c6488681882ff152c3a07838736b1f3b60" } }]
+
+[[packages]]
 name = "pydantic"
 version = "2.10.6"
 wheels = [
@@ -39,6 +52,11 @@ wheels = [
 name = "pydantic-core"
 version = "2.27.2"
 wheels = [{ url = "https://cdn.jsdelivr.net/pyodide/v0.28.3/full/pydantic_core-2.27.2-cp313-cp313-pyodide_2025_0_wasm32.whl", hashes = { sha256 = "3695112ef99b222e48e0a2837b055ec818b43ff5e2e0802e99f5d6d2dd36af7b" } }]
+
+[[packages]]
+name = "python-multipart"
+version = "0.0.32"
+wheels = [{ url = "https://files.pythonhosted.org/packages/e1/04/e8135ebd1ad02c56ec633277529b2602ff99ff634be76cdba5744cf554fd/python_multipart-0.0.32-py3-none-any.whl", upload-time = 2026-06-04T16:18:57Z, size = 30042, hashes = { sha256 = "ff6d3f776f16878c894e52e107296ffc890e913c611b1a4ec6c44e2821fe2e23" } }]
 
 [[packages]]
 name = "starlette"
