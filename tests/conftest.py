@@ -52,6 +52,21 @@ def reset_local_db():
         cwd=REPO_ROOT,
         check=True,
     )
+    subprocess.run(
+        [
+            "uv",
+            "run",
+            "pywrangler",
+            "d1",
+            "execute",
+            D1_DATABASE_NAME,
+            "--local",
+            "--command",
+            "DELETE FROM categories;",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+    )
 
 
 @contextmanager

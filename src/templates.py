@@ -61,6 +61,65 @@ ACCOUNTS_LIST = """
 </html>
 """
 
+CATEGORIES_LIST = """
+<!doctype html>
+<html>
+<head><title>Categories</title>""" + BASE_STYLE + """</head>
+<body>
+  <h1>Categories</h1>
+
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+  <table>
+    <thead><tr><th>Name</th><th>Created</th><th></th></tr></thead>
+    <tbody>
+      {% for category in categories %}
+      <tr>
+        <td>{{ category.name }}</td>
+        <td>{{ category.created_at }}</td>
+        <td class="actions">
+          <a href="/ui/categories/{{ category.id }}/edit">Edit</a>
+          <form class="inline" method="post" action="/ui/categories/{{ category.id }}/delete">
+            <button type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3">No categories yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <fieldset>
+    <legend>Add category</legend>
+    <form method="post" action="/ui/categories">
+      <label>Name<input type="text" name="name" value="{{ form_name }}" required></label>
+      <button type="submit">Add</button>
+    </form>
+  </fieldset>
+</body>
+</html>
+"""
+
+CATEGORY_EDIT = """
+<!doctype html>
+<html>
+<head><title>Edit Category</title>""" + BASE_STYLE + """</head>
+<body>
+  <h1>Edit Category</h1>
+
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+  <form method="post" action="/ui/categories/{{ category.id }}/edit">
+    <label>Name<input type="text" name="name" value="{{ category.name }}" required></label>
+    <button type="submit">Save</button>
+  </form>
+
+  <p><a href="/ui/categories">Back to categories</a></p>
+</body>
+</html>
+"""
+
 ACCOUNT_EDIT = """
 <!doctype html>
 <html>
@@ -89,4 +148,6 @@ ACCOUNT_EDIT = """
 TEMPLATES = {
     "accounts_list.html": ACCOUNTS_LIST,
     "account_edit.html": ACCOUNT_EDIT,
+    "categories_list.html": CATEGORIES_LIST,
+    "category_edit.html": CATEGORY_EDIT,
 }

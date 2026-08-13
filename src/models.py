@@ -18,3 +18,17 @@ class Account(BaseModel):
     name: str
     type: str
     created_at: str
+
+
+class CategoryCreate(BaseModel):
+    name: str = Field(min_length=1)
+
+
+class CategoryUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1)
+
+
+class Category(BaseModel):
+    id: int
+    name: str
+    created_at: str

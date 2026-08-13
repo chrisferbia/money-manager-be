@@ -4,9 +4,9 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 
-from api import create_account, delete_account, update_account
-from db import db, fetch_account
-from models import AccountCreate, AccountUpdate
+from api import create_account, create_category, delete_account, delete_category, update_account, update_category
+from db import db, fetch_account, fetch_category
+from models import AccountCreate, AccountUpdate, CategoryCreate, CategoryUpdate
 
 router = APIRouter()
 
@@ -95,3 +95,75 @@ async def ui_delete_account(account_id: int, request: Request):
     except HTTPException:
         pass
     return RedirectResponse("/ui/accounts", status_code=303)
+
+
+@router.get("/ui/categories", response_class=HTMLResponse)
+async def ui_list_categories(request: Request):
+    conn = db(request)
+    result = await conn.prepare("SELECT id, name, created_at FROM categories ORDER BY id").all()
+    return jinja_env.get_template("categories_list.html").render(
+        categories=result.results, error=None, form_name=""
+    )
+
+
+@router.post("/ui/categories", response_class=HTMLResponse)
+async def ui_create_category(request: Request):
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+
+    error = None
+    try:
+        payload = CategoryCreate(name=name)
+        await create_category(payload, request)
+    except ValidationError:
+        error = "Name is required"
+    except HTTPException as exc:
+        error = exc.detail
+    else:
+        return RedirectResponse("/ui/categories", status_code=303)
+
+    conn = db(request)
+    result = await conn.prepare("SELECT id, name, created_at FROM categories ORDER BY id").all()
+    return jinja_env.get_template("categories_list.html").render(
+        categories=result.results, error=error, form_name=name
+    )
+
+
+@router.get("/ui/categories/{category_id}/edit", response_class=HTMLResponse)
+async def ui_edit_category_form(category_id: int, request: Request):
+    conn = db(request)
+    category = await fetch_category(conn, category_id)
+    if category is None:
+        return RedirectResponse("/ui/categories", status_code=303)
+    return jinja_env.get_template("category_edit.html").render(category=category, error=None)
+
+
+@router.post("/ui/categories/{category_id}/edit", response_class=HTMLResponse)
+async def ui_update_category(category_id: int, request: Request):
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+
+    error = None
+    try:
+        payload = CategoryUpdate(name=name)
+        await update_category(category_id, payload, request)
+    except ValidationError:
+        error = "Name is required"
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return RedirectResponse("/ui/categories", status_code=303)
+        error = exc.detail
+    else:
+        return RedirectResponse("/ui/categories", status_code=303)
+
+    category = {"id": category_id, "name": name, "created_at": ""}
+    return jinja_env.get_template("category_edit.html").render(category=category, error=error)
+
+
+@router.post("/ui/categories/{category_id}/delete")
+async def ui_delete_category(category_id: int, request: Request):
+    try:
+        await delete_category(category_id, request)
+    except HTTPException:
+        pass
+    return RedirectResponse("/ui/categories", status_code=303)

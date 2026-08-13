@@ -26,3 +26,24 @@ async def account_name_taken(conn, name: str, exclude_id: Optional[int] = None) 
             .first()
         )
     return row is not None
+
+
+async def fetch_category(conn, category_id: int):
+    row = (
+        await conn.prepare("SELECT id, name, created_at FROM categories WHERE id = ?")
+        .bind(category_id)
+        .first()
+    )
+    return row
+
+
+async def category_name_taken(conn, name: str, exclude_id: Optional[int] = None) -> bool:
+    if exclude_id is None:
+        row = await conn.prepare("SELECT id FROM categories WHERE name = ?").bind(name).first()
+    else:
+        row = (
+            await conn.prepare("SELECT id FROM categories WHERE name = ? AND id != ?")
+            .bind(name, exclude_id)
+            .first()
+        )
+    return row is not None
