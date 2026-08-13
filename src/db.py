@@ -105,7 +105,8 @@ async def list_transactions(
     params = []
 
     if account_id is not None:
-        clauses.append("account_id = ?")
+        clauses.append("(account_id = ? OR related_account_id = ?)")
+        params.append(account_id)
         params.append(account_id)
     if category_id is not None:
         clauses.append("category_id = ?")
@@ -128,4 +129,66 @@ async def list_transactions(
     if params:
         query = query.bind(*params)
     result = await query.all()
+    return result.results
+
+
+async def account_balance(conn, account_id: int):
+    row = (
+        await conn.prepare(
+            """
+            SELECT COALESCE(SUM(
+                CASE
+                    WHEN type = 'income' AND account_id = ? THEN amount
+                    WHEN type = 'expense' AND account_id = ? THEN -amount
+                    WHEN type = 'transfer' AND account_id = ? THEN -amount
+                    WHEN type = 'transfer' AND related_account_id = ? THEN amount
+                    ELSE 0
+                END
+            ), 0) AS balance
+            FROM transactions
+            WHERE account_id = ? OR related_account_id = ?
+            """
+        )
+        .bind(account_id, account_id, account_id, account_id, account_id, account_id)
+        .first()
+    )
+    return 0 if row is None or row["balance"] is None else row["balance"]
+
+
+async def list_accounts_with_balance(conn):
+    rows = await conn.prepare("SELECT id, name, type, created_at FROM accounts ORDER BY id").all()
+    accounts = []
+    for account in rows.results:
+        balance = await account_balance(conn, account["id"])
+        accounts.append({**account, "balance": balance})
+    return accounts
+
+
+async def expenses_by_category(conn, from_: Optional[str] = None, to: Optional[str] = None):
+    sql = """
+        SELECT c.id, c.name, COALESCE(SUM(t.amount), 0) AS total
+        FROM categories c
+        JOIN transactions t ON t.category_id = c.id
+        WHERE t.type = 'expense'
+    """
+    params = []
+    if from_ is not None:
+        sql += " AND t.occurred_at >= ?"
+        params.append(from_)
+    if to is not None:
+        sql += " AND t.occurred_at <= ?"
+        params.append(to)
+    sql += " GROUP BY c.id, c.name HAVING COALESCE(SUM(t.amount), 0) > 0 ORDER BY total DESC, c.name ASC"
+
+    query = conn.prepare(sql)
+    if params:
+        query = query.bind(*params)
+    result = await query.all()
+    return result.results
+
+
+async def recent_transactions(conn, limit: int = 5):
+    result = await conn.prepare(
+        "SELECT id, type, account_id, category_id, related_account_id, amount, description, occurred_at, created_at FROM transactions ORDER BY occurred_at DESC, id DESC LIMIT ?"
+    ).bind(limit).all()
     return result.results

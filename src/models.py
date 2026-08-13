@@ -35,8 +35,9 @@ class Category(BaseModel):
 
 
 class TransactionCreate(BaseModel):
-    type: Literal["income", "expense"]
+    type: Literal["income", "expense", "transfer"]
     account_id: int
+    related_account_id: Optional[int] = None
     category_id: Optional[int] = None
     amount: int = Field(gt=0)
     description: Optional[str] = None

@@ -67,6 +67,38 @@ def test_ac3_list_accounts_returns_created_accounts(dev_server):
     assert created["id"] in ids
 
 
+def test_ac3b_list_accounts_include_balance_returns_balances(dev_server):
+    port = dev_server
+    cash = requests.post(
+        f"http://localhost:{port}/accounts",
+        json={"name": "AC3 Balance Cash", "type": "cash"},
+    ).json()
+    debit = requests.post(
+        f"http://localhost:{port}/accounts",
+        json={"name": "AC3 Balance Debit", "type": "debit_card"},
+    ).json()
+
+    balance_listing = requests.get(f"http://localhost:{port}/accounts", params={"include_balance": "true"})
+    assert balance_listing.status_code == 200
+    rows = balance_listing.json()
+    cash_row = next(row for row in rows if row["id"] == cash["id"])
+    debit_row = next(row for row in rows if row["id"] == debit["id"])
+    assert cash_row["balance"] == 0
+    assert debit_row["balance"] == 0
+
+
+def test_ac2_new_account_has_zero_balance(dev_server):
+    port = dev_server
+    account = requests.post(
+        f"http://localhost:{port}/accounts",
+        json={"name": "AC2 Zero Balance", "type": "cash"},
+    ).json()
+
+    balance = requests.get(f"http://localhost:{port}/accounts/{account['id']}/balance")
+    assert balance.status_code == 200
+    assert balance.json()["balance"] == 0
+
+
 def test_ac4_get_account_by_id(dev_server):
     port = dev_server
     created = requests.post(
@@ -177,10 +209,9 @@ def test_ac6_delete_account_then_get_returns_404(dev_server):
     assert refetched.status_code == 404
 
 
-def test_ac7_root_no_longer_returns_a_quote(dev_server):
+def test_ac7_root_returns_dashboard_page(dev_server):
     port = dev_server
     response = requests.get(f"http://localhost:{port}/")
-    assert response.status_code == 404
-    body = response.json()
-    assert "quote" not in body
-    assert "author" not in body
+    assert response.status_code == 200
+    assert "Money Manager" in response.text
+    assert "Dashboard" in response.text

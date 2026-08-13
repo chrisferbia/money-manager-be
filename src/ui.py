@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from api import (
     create_account,
     create_category,
+    create_transfer,
     create_transaction,
     delete_account,
     delete_category,
@@ -15,7 +16,7 @@ from api import (
     update_category,
     update_transaction,
 )
-from db import db, fetch_account, fetch_category, fetch_transaction, list_transactions
+from db import db, expenses_by_category, fetch_account, fetch_category, fetch_transaction, list_transactions, list_accounts_with_balance, recent_transactions
 from models import (
     AccountCreate,
     AccountUpdate,
@@ -32,14 +33,33 @@ jinja_env = jinja2.Environment(
 )
 
 
+@router.get("/", response_class=HTMLResponse)
+async def ui_home(request: Request):
+    conn = db(request)
+    accounts = await list_accounts_with_balance(conn)
+    recent = await recent_transactions(conn, 5)
+    report = await expenses_by_category(conn)
+    account_names = {account["id"]: account["name"] for account in accounts}
+    total_balance = sum(account["balance"] for account in accounts)
+    total_income = sum(tx["amount"] for tx in recent if tx["type"] == "income")
+    total_expense = sum(tx["amount"] for tx in recent if tx["type"] == "expense")
+    return jinja_env.get_template("home.html").render(
+        accounts=accounts,
+        recent_transactions=recent,
+        report=report,
+        account_names=account_names,
+        total_balance=total_balance,
+        total_income=total_income,
+        total_expense=total_expense,
+    )
+
+
 @router.get("/ui/accounts", response_class=HTMLResponse)
 async def ui_list_accounts(request: Request):
     conn = db(request)
-    result = await conn.prepare(
-        "SELECT id, name, type, created_at FROM accounts ORDER BY id"
-    ).all()
+    accounts = await list_accounts_with_balance(conn)
     return jinja_env.get_template("accounts_list.html").render(
-        accounts=result.results, error=None, form_name="", form_type="cash"
+        accounts=accounts, error=None, form_name="", form_type="cash"
     )
 
 
@@ -61,11 +81,20 @@ async def ui_create_account(request: Request):
         return RedirectResponse("/ui/accounts", status_code=303)
 
     conn = db(request)
-    result = await conn.prepare(
-        "SELECT id, name, type, created_at FROM accounts ORDER BY id"
-    ).all()
+    accounts = await list_accounts_with_balance(conn)
     return jinja_env.get_template("accounts_list.html").render(
-        accounts=result.results, error=error, form_name=name, form_type=type_ or "cash"
+        accounts=accounts, error=error, form_name=name, form_type=type_ or "cash"
+    )
+
+
+@router.get("/ui/reports/expenses-by-category", response_class=HTMLResponse)
+async def ui_expenses_by_category(request: Request):
+    conn = db(request)
+    from_value = request.query_params.get("from") or ""
+    to_value = request.query_params.get("to") or ""
+    report = await expenses_by_category(conn, from_value or None, to_value or None)
+    return jinja_env.get_template("expenses_by_category.html").render(
+        report=report, from_value=from_value, to_value=to_value
     )
 
 
@@ -200,6 +229,7 @@ async def ui_list_transactions(request: Request):
         form={
             "type": "income",
             "account_id": "",
+            "related_account_id": "",
             "category_id": "",
             "amount": "",
             "description": "",
@@ -213,6 +243,7 @@ async def ui_create_transaction(request: Request):
     form = await request.form()
     type_ = form.get("type") or "income"
     account_id = form.get("account_id") or ""
+    related_account_id = form.get("related_account_id") or None
     category_id = form.get("category_id") or None
     amount = form.get("amount") or ""
     description = (form.get("description") or "").strip() or None
@@ -223,12 +254,16 @@ async def ui_create_transaction(request: Request):
         payload = TransactionCreate(
             type=type_,
             account_id=account_id,
+            related_account_id=related_account_id,
             category_id=category_id,
             amount=amount,
             description=description,
             occurred_at=occurred_at,
         )
-        await create_transaction(payload, request)
+        if type_ == "transfer":
+            await create_transfer(payload, request)
+        else:
+            await create_transaction(payload, request)
     except ValidationError:
         error = "Type, account, and positive amount are required"
     except HTTPException as exc:
@@ -248,6 +283,7 @@ async def ui_create_transaction(request: Request):
         form={
             "type": type_,
             "account_id": account_id,
+            "related_account_id": related_account_id or "",
             "category_id": category_id or "",
             "amount": amount,
             "description": description or "",

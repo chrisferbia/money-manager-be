@@ -5,6 +5,8 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from db import (
     account_name_taken,
     account_exists,
+    account_balance,
+    expenses_by_category,
     category_name_taken,
     category_exists,
     db,
@@ -62,11 +64,28 @@ async def create_account(payload: AccountCreate, request: Request):
     return await fetch_account(conn, result.meta.last_row_id)
 
 
-@router.get("/accounts", response_model=list[Account])
-async def list_accounts(request: Request):
+@router.get("/accounts")
+async def list_accounts(request: Request, include_balance: bool = False):
     conn = db(request)
     result = await conn.prepare("SELECT id, name, type, created_at FROM accounts ORDER BY id").all()
-    return result.results
+    accounts = result.results
+    if include_balance:
+        return [{**account, "balance": await account_balance(conn, account["id"])} for account in accounts]
+    return accounts
+
+
+@router.get("/accounts/{account_id}/balance")
+async def get_account_balance(account_id: int, request: Request):
+    conn = db(request)
+    if not await account_exists(conn, account_id):
+        raise HTTPException(status_code=404, detail="Account not found")
+    return {"account_id": account_id, "balance": await account_balance(conn, account_id)}
+
+
+@router.get("/reports/expenses-by-category")
+async def report_expenses_by_category(request: Request, from_: str | None = Query(default=None, alias="from"), to: str | None = Query(default=None, alias="to")):
+    conn = db(request)
+    return await expenses_by_category(conn, from_, to)
 
 
 @router.get("/accounts/{account_id}", response_model=Account)
@@ -175,24 +194,76 @@ async def create_transaction(payload: TransactionCreate, request: Request):
         raise HTTPException(status_code=404, detail="Account not found")
 
     category_id = None
+    related_account_id = None
     if payload.type == "income":
         if payload.category_id is not None:
             raise HTTPException(status_code=400, detail="Income transactions cannot have a category")
-    else:
+    elif payload.type == "expense":
         if payload.category_id is None:
             raise HTTPException(status_code=400, detail="Expense transactions require a category")
         if not await category_exists(conn, payload.category_id):
             raise HTTPException(status_code=404, detail="Category not found")
         category_id = payload.category_id
+    else:
+        if payload.category_id is not None:
+            raise HTTPException(status_code=400, detail="Transfer transactions cannot have a category")
+        if payload.related_account_id is None:
+            raise HTTPException(status_code=400, detail="Transfer transactions require a destination account")
+        if payload.related_account_id == payload.account_id:
+            raise HTTPException(status_code=400, detail="Transfer accounts must differ")
+        if not await account_exists(conn, payload.related_account_id):
+            raise HTTPException(status_code=404, detail="Account not found")
+        related_account_id = payload.related_account_id
 
     occurred_at = _normalize_occurred_at(payload.occurred_at)
     description = payload.description if payload.description != "" else None
 
     result = (
         await conn.prepare(
-            "INSERT INTO transactions (type, account_id, category_id, related_account_id, amount, description, occurred_at) VALUES (?, ?, ?, NULL, ?, ?, ?)"
+            "INSERT INTO transactions (type, account_id, category_id, related_account_id, amount, description, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
         )
-        .bind(payload.type, payload.account_id, category_id, payload.amount, description, occurred_at)
+        .bind(
+            payload.type,
+            payload.account_id,
+            category_id,
+            related_account_id,
+            payload.amount,
+            description,
+            occurred_at,
+        )
+        .run()
+    )
+    return await fetch_transaction(conn, result.meta.last_row_id)
+
+
+async def create_transfer(payload: TransactionCreate, request: Request):
+    conn = db(request)
+
+    if not await account_exists(conn, payload.account_id):
+        raise HTTPException(status_code=404, detail="Account not found")
+    if payload.related_account_id is None:
+        raise HTTPException(status_code=400, detail="Transfer transactions require a destination account")
+    if payload.related_account_id == payload.account_id:
+        raise HTTPException(status_code=400, detail="Transfer accounts must differ")
+    if not await account_exists(conn, payload.related_account_id):
+        raise HTTPException(status_code=404, detail="Account not found")
+    if payload.category_id is not None:
+        raise HTTPException(status_code=400, detail="Transfer transactions cannot have a category")
+
+    occurred_at = _normalize_occurred_at(payload.occurred_at)
+    description = payload.description if payload.description != "" else None
+    result = (
+        await conn.prepare(
+            "INSERT INTO transactions (type, account_id, category_id, related_account_id, amount, description, occurred_at) VALUES (?, ?, NULL, ?, ?, ?, ?)"
+        )
+        .bind(
+            "transfer",
+            payload.account_id,
+            payload.related_account_id,
+            payload.amount,
+            description,
+            occurred_at,
+        )
         .run()
     )
     return await fetch_transaction(conn, result.meta.last_row_id)
@@ -206,7 +277,7 @@ async def list_transaction_route(
     type_: str | None = Query(default=None, alias="type"),
     from_: str | None = Query(default=None, alias="from"),
     to: str | None = Query(default=None, alias="to"),
-):
+): 
     conn = db(request)
     return await list_transactions(conn, account_id, category_id, type_, from_, to)
 
@@ -220,12 +291,22 @@ async def get_transaction(transaction_id: int, request: Request):
     return transaction
 
 
+@router.post("/transfers", status_code=201, response_model=Transaction)
+async def create_transfer_route(payload: TransactionCreate, request: Request):
+    if payload.type != "transfer":
+        raise HTTPException(status_code=400, detail="Transfer type is required")
+    return await create_transfer(payload, request)
+
+
 @router.patch("/transactions/{transaction_id}", response_model=Transaction)
 async def update_transaction(transaction_id: int, payload: TransactionUpdate, request: Request):
     conn = db(request)
     existing = await fetch_transaction(conn, transaction_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
+
+    if existing["type"] == "transfer" and "category_id" in payload.model_fields_set:
+        raise HTTPException(status_code=400, detail="Transfer transactions cannot have a category")
 
     amount = payload.amount if payload.amount is not None else existing["amount"]
     description = (
@@ -241,7 +322,7 @@ async def update_transaction(transaction_id: int, payload: TransactionUpdate, re
         if "category_id" in payload.model_fields_set and payload.category_id is not None:
             raise HTTPException(status_code=400, detail="Income transactions cannot have a category")
         category_id = None
-    else:
+    elif existing["type"] == "expense":
         if "category_id" in payload.model_fields_set:
             if payload.category_id is None:
                 raise HTTPException(status_code=400, detail="Expense transactions require a category")
@@ -252,6 +333,10 @@ async def update_transaction(transaction_id: int, payload: TransactionUpdate, re
             raise HTTPException(status_code=400, detail="Expense transactions require a category")
         if not await category_exists(conn, category_id):
             raise HTTPException(status_code=404, detail="Category not found")
+    else:
+        category_id = None
+        if existing["related_account_id"] is None:
+            raise HTTPException(status_code=400, detail="Transfer transactions require a destination account")
 
     await (
         conn.prepare("UPDATE transactions SET amount = ?, category_id = ?, description = ?, occurred_at = ? WHERE id = ?")

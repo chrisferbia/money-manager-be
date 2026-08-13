@@ -12,6 +12,7 @@ BASE_STYLE = """
   input, select { padding: 0.3rem; width: 100%; box-sizing: border-box; }
   button { margin-top: 1rem; padding: 0.4rem 1rem; }
   .muted { color: #666; }
+  .pill { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 999px; background: #eee; }
 </style>
 """
 
@@ -24,13 +25,14 @@ ACCOUNTS_LIST = """
 
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
-  <table>
-    <thead><tr><th>Name</th><th>Type</th><th>Created</th><th></th></tr></thead>
+   <table>
+    <thead><tr><th>Name</th><th>Type</th><th>Balance</th><th>Created</th><th></th></tr></thead>
     <tbody>
       {% for account in accounts %}
       <tr>
         <td>{{ account.name }}</td>
         <td>{{ account.type }}</td>
+        <td>{% if account.balance is defined %}{{ account.balance }}{% else %}<span class="muted">-</span>{% endif %}</td>
         <td>{{ account.created_at }}</td>
         <td class="actions">
           <a href="/ui/accounts/{{ account.id }}/edit">Edit</a>
@@ -40,7 +42,7 @@ ACCOUNTS_LIST = """
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="4">No accounts yet.</td></tr>
+      <tr><td colspan="5">No accounts yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -71,7 +73,7 @@ CATEGORIES_LIST = """
 
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
-  <table>
+   <table>
     <thead><tr><th>Name</th><th>Created</th><th></th></tr></thead>
     <tbody>
       {% for category in categories %}
@@ -98,6 +100,36 @@ CATEGORIES_LIST = """
       <button type="submit">Add</button>
     </form>
   </fieldset>
+</body>
+</html>
+"""
+
+EXPENSES_BY_CATEGORY = """
+<!doctype html>
+<html>
+<head><title>Expenses by Category</title>""" + BASE_STYLE + """</head>
+<body>
+  <h1>Expenses by Category</h1>
+
+  <form method="get" action="/ui/reports/expenses-by-category">
+    <label>From<input type="text" name="from" value="{{ from_value }}"></label>
+    <label>To<input type="text" name="to" value="{{ to_value }}"></label>
+    <button type="submit">Filter</button>
+  </form>
+
+  <table>
+    <thead><tr><th>Category</th><th>Total</th></tr></thead>
+    <tbody>
+      {% for item in report %}
+      <tr>
+        <td>{{ item.name }}</td>
+        <td>{{ item.total }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="2">No matching expenses.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </body>
 </html>
 """
@@ -147,10 +179,84 @@ ACCOUNT_EDIT = """
 """
 
 TEMPLATES = {
+    "home.html": """
+<!doctype html>
+<html>
+<head><title>Money Manager</title>""" + BASE_STYLE + """</head>
+<body>
+  <h1>Money Manager</h1>
+
+  <nav class="actions">
+    <a href="/">Dashboard</a>
+    <a href="/ui/accounts">Accounts</a>
+    <a href="/ui/transactions">Transactions</a>
+    <a href="/ui/categories">Categories</a>
+    <a href="/ui/reports/expenses-by-category">Reports</a>
+  </nav>
+
+  <table>
+    <thead><tr><th>Total balance</th><th>Recent income</th><th>Recent expense</th></tr></thead>
+    <tbody>
+      <tr><td>{{ total_balance }}</td><td>{{ total_income }}</td><td>{{ total_expense }}</td></tr>
+    </tbody>
+  </table>
+
+  <fieldset>
+    <legend>Quick actions</legend>
+    <p><a href="/ui/transactions">Add transaction</a></p>
+    <p><a href="/ui/transactions">Transfer money</a></p>
+    <p><a href="/ui/accounts">Add account</a></p>
+  </fieldset>
+
+  <h2>Accounts</h2>
+  <table>
+    <thead><tr><th>Name</th><th>Type</th><th>Balance</th></tr></thead>
+    <tbody>
+      {% for account in accounts %}
+      <tr><td>{{ account.name }}</td><td>{{ account.type }}</td><td>{{ account.balance }}</td></tr>
+      {% else %}
+      <tr><td colspan="3">No accounts yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Recent activity</h2>
+  <table>
+    <thead><tr><th>Type</th><th>From</th><th>To</th><th>Amount</th><th>Occurred</th></tr></thead>
+    <tbody>
+      {% for transaction in recent_transactions %}
+      <tr>
+        <td>{{ transaction.type }}</td>
+        <td>{{ account_names[transaction.account_id] }}</td>
+        <td>{% if transaction.type == "transfer" and transaction.related_account_id %}{{ account_names[transaction.related_account_id] }}{% else %}<span class="muted">-</span>{% endif %}</td>
+        <td>{{ transaction.amount }}</td>
+        <td>{{ transaction.occurred_at }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No transactions yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Reports preview</h2>
+  <table>
+    <thead><tr><th>Category</th><th>Total</th></tr></thead>
+    <tbody>
+      {% for item in report %}
+      <tr><td>{{ item.name }}</td><td>{{ item.total }}</td></tr>
+      {% else %}
+      <tr><td colspan="2">No matching expenses.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>
+""",
     "accounts_list.html": ACCOUNTS_LIST,
     "account_edit.html": ACCOUNT_EDIT,
     "categories_list.html": CATEGORIES_LIST,
     "category_edit.html": CATEGORY_EDIT,
+    "expenses_by_category.html": EXPENSES_BY_CATEGORY,
     "transactions_list.html": """
 <!doctype html>
 <html>
@@ -161,7 +267,7 @@ TEMPLATES = {
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
   <table>
-    <thead><tr><th>Type</th><th>Account</th><th>Category</th><th>Amount</th><th>Occurred</th><th></th></tr></thead>
+    <thead><tr><th>Type</th><th>Account</th><th>Category</th><th>Related</th><th>Amount</th><th>Occurred</th><th></th></tr></thead>
     <tbody>
       {% for transaction in transactions %}
       <tr>
@@ -178,6 +284,13 @@ TEMPLATES = {
             {% endfor %}
           {% else %}<span class="muted">-</span>{% endif %}
         </td>
+        <td>
+          {% if transaction.type == "transfer" and transaction.related_account_id %}
+            {% for account in accounts %}
+              {% if account.id == transaction.related_account_id %}to {{ account.name }}{% endif %}
+            {% endfor %}
+          {% else %}<span class="muted">-</span>{% endif %}
+        </td>
         <td>{{ transaction.amount }}</td>
         <td>{{ transaction.occurred_at }}</td>
         <td class="actions">
@@ -188,7 +301,7 @@ TEMPLATES = {
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="6">No transactions yet.</td></tr>
+      <tr><td colspan="7">No transactions yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -200,6 +313,7 @@ TEMPLATES = {
         <select name="type">
           <option value="income" {% if form.type == "income" %}selected{% endif %}>income</option>
           <option value="expense" {% if form.type == "expense" %}selected{% endif %}>expense</option>
+          <option value="transfer" {% if form.type == "transfer" %}selected{% endif %}>transfer</option>
         </select>
       </label>
       <label>Account
@@ -207,6 +321,14 @@ TEMPLATES = {
           <option value="">Select an account</option>
           {% for account in accounts %}
           <option value="{{ account.id }}" {% if form.account_id|string == account.id|string %}selected{% endif %}>{{ account.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Destination account
+        <select name="related_account_id">
+          <option value="">None</option>
+          {% for account in accounts %}
+          <option value="{{ account.id }}" {% if form.related_account_id|string == account.id|string %}selected{% endif %}>{{ account.name }}</option>
           {% endfor %}
         </select>
       </label>
@@ -236,20 +358,21 @@ TEMPLATES = {
 
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
-  <p class="muted">Type: {{ transaction.type }} | Account ID: {{ transaction.account_id }}</p>
-
-  <form method="post" action="/ui/transactions/{{ transaction.id }}/edit">
-    <label>Category
-      <select name="category_id">
-        <option value="">None</option>
-        {% for category in categories %}
-        <option value="{{ category.id }}" {% if transaction.category_id and transaction.category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Amount (minor units)<input type="number" name="amount" min="1" value="{{ transaction.amount }}" required></label>
-    <label>Description<input type="text" name="description" value="{{ transaction.description or '' }}"></label>
-    <label>Occurred at<input type="text" name="occurred_at" value="{{ transaction.occurred_at }}"></label>
+    <form method="post" action="/ui/transactions/{{ transaction.id }}/edit">
+      <p class="muted">{% if transaction.type == "transfer" %}Transfer from account {{ transaction.account_id }} to account {{ transaction.related_account_id }}{% else %}Type: {{ transaction.type }} | Account ID: {{ transaction.account_id }}{% endif %}</p>
+      <label>Category
+        <select name="category_id">
+          <option value="">None</option>
+          {% if transaction.type != "transfer" %}
+          {% for category in categories %}
+          <option value="{{ category.id }}" {% if transaction.category_id and transaction.category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
+          {% endfor %}
+          {% endif %}
+        </select>
+      </label>
+      <label>Amount (minor units)<input type="number" name="amount" min="1" value="{{ transaction.amount }}" required></label>
+      <label>Description<input type="text" name="description" value="{{ transaction.description or '' }}"></label>
+      <label>Occurred at<input type="text" name="occurred_at" value="{{ transaction.occurred_at }}"></label>
     <button type="submit">Save</button>
   </form>
 
