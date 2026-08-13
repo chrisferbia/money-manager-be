@@ -1,11 +1,19 @@
-from fastapi import APIRouter, HTTPException, Request
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from db import (
     account_name_taken,
+    account_exists,
     category_name_taken,
+    category_exists,
     db,
     fetch_account,
     fetch_category,
+    fetch_transaction,
+    list_transactions,
+    transaction_references_account,
+    transaction_references_category,
 )
 from models import (
     Account,
@@ -14,9 +22,30 @@ from models import (
     Category,
     CategoryCreate,
     CategoryUpdate,
+    Transaction,
+    TransactionCreate,
+    TransactionUpdate,
 )
 
 router = APIRouter()
+
+
+def _now_iso():
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _normalize_occurred_at(value: str | None):
+    if not value:
+        return _now_iso()
+
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return _now_iso()
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 @router.post("/accounts", status_code=201, response_model=Account)
@@ -76,6 +105,8 @@ async def delete_account(account_id: int, request: Request):
     existing = await fetch_account(conn, account_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="Account not found")
+    if await transaction_references_account(conn, account_id):
+        raise HTTPException(status_code=409, detail="Account has transactions")
     await conn.prepare("DELETE FROM accounts WHERE id = ?").bind(account_id).run()
 
 
@@ -131,4 +162,109 @@ async def delete_category(category_id: int, request: Request):
     existing = await fetch_category(conn, category_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="Category not found")
+    if await transaction_references_category(conn, category_id):
+        raise HTTPException(status_code=409, detail="Category has expense transactions")
     await conn.prepare("DELETE FROM categories WHERE id = ?").bind(category_id).run()
+
+
+@router.post("/transactions", status_code=201, response_model=Transaction)
+async def create_transaction(payload: TransactionCreate, request: Request):
+    conn = db(request)
+
+    if not await account_exists(conn, payload.account_id):
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    category_id = None
+    if payload.type == "income":
+        if payload.category_id is not None:
+            raise HTTPException(status_code=400, detail="Income transactions cannot have a category")
+    else:
+        if payload.category_id is None:
+            raise HTTPException(status_code=400, detail="Expense transactions require a category")
+        if not await category_exists(conn, payload.category_id):
+            raise HTTPException(status_code=404, detail="Category not found")
+        category_id = payload.category_id
+
+    occurred_at = _normalize_occurred_at(payload.occurred_at)
+    description = payload.description if payload.description != "" else None
+
+    result = (
+        await conn.prepare(
+            "INSERT INTO transactions (type, account_id, category_id, related_account_id, amount, description, occurred_at) VALUES (?, ?, ?, NULL, ?, ?, ?)"
+        )
+        .bind(payload.type, payload.account_id, category_id, payload.amount, description, occurred_at)
+        .run()
+    )
+    return await fetch_transaction(conn, result.meta.last_row_id)
+
+
+@router.get("/transactions", response_model=list[Transaction])
+async def list_transaction_route(
+    request: Request,
+    account_id: int | None = None,
+    category_id: int | None = None,
+    type_: str | None = Query(default=None, alias="type"),
+    from_: str | None = Query(default=None, alias="from"),
+    to: str | None = Query(default=None, alias="to"),
+):
+    conn = db(request)
+    return await list_transactions(conn, account_id, category_id, type_, from_, to)
+
+
+@router.get("/transactions/{transaction_id}", response_model=Transaction)
+async def get_transaction(transaction_id: int, request: Request):
+    conn = db(request)
+    transaction = await fetch_transaction(conn, transaction_id)
+    if transaction is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return transaction
+
+
+@router.patch("/transactions/{transaction_id}", response_model=Transaction)
+async def update_transaction(transaction_id: int, payload: TransactionUpdate, request: Request):
+    conn = db(request)
+    existing = await fetch_transaction(conn, transaction_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    amount = payload.amount if payload.amount is not None else existing["amount"]
+    description = (
+        payload.description if "description" in payload.model_fields_set else existing["description"]
+    )
+    occurred_at = (
+        _normalize_occurred_at(payload.occurred_at)
+        if "occurred_at" in payload.model_fields_set
+        else existing["occurred_at"]
+    )
+
+    if existing["type"] == "income":
+        if "category_id" in payload.model_fields_set and payload.category_id is not None:
+            raise HTTPException(status_code=400, detail="Income transactions cannot have a category")
+        category_id = None
+    else:
+        if "category_id" in payload.model_fields_set:
+            if payload.category_id is None:
+                raise HTTPException(status_code=400, detail="Expense transactions require a category")
+            category_id = payload.category_id
+        else:
+            category_id = existing["category_id"]
+        if category_id is None:
+            raise HTTPException(status_code=400, detail="Expense transactions require a category")
+        if not await category_exists(conn, category_id):
+            raise HTTPException(status_code=404, detail="Category not found")
+
+    await (
+        conn.prepare("UPDATE transactions SET amount = ?, category_id = ?, description = ?, occurred_at = ? WHERE id = ?")
+        .bind(amount, category_id, description, occurred_at, transaction_id)
+        .run()
+    )
+    return await fetch_transaction(conn, transaction_id)
+
+
+@router.delete("/transactions/{transaction_id}", status_code=204)
+async def delete_transaction(transaction_id: int, request: Request):
+    conn = db(request)
+    existing = await fetch_transaction(conn, transaction_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    await conn.prepare("DELETE FROM transactions WHERE id = ?").bind(transaction_id).run()

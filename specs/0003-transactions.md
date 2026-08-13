@@ -1,6 +1,6 @@
 ---
-stage: draft
-updated: 2026-08-10
+stage: tested
+updated: 2026-08-13
 ---
 
 # Spec: Transactions (Income & Expense)

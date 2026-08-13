@@ -1,6 +1,6 @@
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AccountCreate(BaseModel):
@@ -31,4 +31,34 @@ class CategoryUpdate(BaseModel):
 class Category(BaseModel):
     id: int
     name: str
+    created_at: str
+
+
+class TransactionCreate(BaseModel):
+    type: Literal["income", "expense"]
+    account_id: int
+    category_id: Optional[int] = None
+    amount: int = Field(gt=0)
+    description: Optional[str] = None
+    occurred_at: Optional[str] = None
+
+
+class TransactionUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Optional[int] = Field(default=None, gt=0)
+    category_id: Optional[int] = None
+    description: Optional[str] = None
+    occurred_at: Optional[str] = None
+
+
+class Transaction(BaseModel):
+    id: int
+    type: str
+    account_id: int
+    category_id: Optional[int] = None
+    related_account_id: Optional[int] = None
+    amount: int
+    description: Optional[str] = None
+    occurred_at: str
     created_at: str

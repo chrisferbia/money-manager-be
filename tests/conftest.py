@@ -47,6 +47,21 @@ def reset_local_db():
             D1_DATABASE_NAME,
             "--local",
             "--command",
+            "DELETE FROM transactions;",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+    )
+    subprocess.run(
+        [
+            "uv",
+            "run",
+            "pywrangler",
+            "d1",
+            "execute",
+            D1_DATABASE_NAME,
+            "--local",
+            "--command",
             "DELETE FROM accounts;",
         ],
         cwd=REPO_ROOT,

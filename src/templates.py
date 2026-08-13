@@ -11,6 +11,7 @@ BASE_STYLE = """
   label { display: block; margin-top: 0.5rem; }
   input, select { padding: 0.3rem; width: 100%; box-sizing: border-box; }
   button { margin-top: 1rem; padding: 0.4rem 1rem; }
+  .muted { color: #666; }
 </style>
 """
 
@@ -150,4 +151,110 @@ TEMPLATES = {
     "account_edit.html": ACCOUNT_EDIT,
     "categories_list.html": CATEGORIES_LIST,
     "category_edit.html": CATEGORY_EDIT,
+    "transactions_list.html": """
+<!doctype html>
+<html>
+<head><title>Transactions</title>""" + BASE_STYLE + """</head>
+<body>
+  <h1>Transactions</h1>
+
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+  <table>
+    <thead><tr><th>Type</th><th>Account</th><th>Category</th><th>Amount</th><th>Occurred</th><th></th></tr></thead>
+    <tbody>
+      {% for transaction in transactions %}
+      <tr>
+        <td>{{ transaction.type }}</td>
+        <td>
+          {% for account in accounts %}
+            {% if account.id == transaction.account_id %}{{ account.name }}{% endif %}
+          {% endfor %}
+        </td>
+        <td>
+          {% if transaction.category_id %}
+            {% for category in categories %}
+              {% if category.id == transaction.category_id %}{{ category.name }}{% endif %}
+            {% endfor %}
+          {% else %}<span class="muted">-</span>{% endif %}
+        </td>
+        <td>{{ transaction.amount }}</td>
+        <td>{{ transaction.occurred_at }}</td>
+        <td class="actions">
+          <a href="/ui/transactions/{{ transaction.id }}/edit">Edit</a>
+          <form class="inline" method="post" action="/ui/transactions/{{ transaction.id }}/delete">
+            <button type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">No transactions yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <fieldset>
+    <legend>Add transaction</legend>
+    <form method="post" action="/ui/transactions">
+      <label>Type
+        <select name="type">
+          <option value="income" {% if form.type == "income" %}selected{% endif %}>income</option>
+          <option value="expense" {% if form.type == "expense" %}selected{% endif %}>expense</option>
+        </select>
+      </label>
+      <label>Account
+        <select name="account_id" required>
+          <option value="">Select an account</option>
+          {% for account in accounts %}
+          <option value="{{ account.id }}" {% if form.account_id|string == account.id|string %}selected{% endif %}>{{ account.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Category
+        <select name="category_id">
+          <option value="">None</option>
+          {% for category in categories %}
+          <option value="{{ category.id }}" {% if form.category_id|string == category.id|string %}selected{% endif %}>{{ category.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Amount (minor units)<input type="number" name="amount" min="1" value="{{ form.amount }}" required></label>
+      <label>Description<input type="text" name="description" value="{{ form.description }}"></label>
+      <label>Occurred at<input type="text" name="occurred_at" value="{{ form.occurred_at }}" placeholder="2026-08-13T12:34:56Z"></label>
+      <button type="submit">Add</button>
+    </form>
+  </fieldset>
+</body>
+</html>
+""",
+    "transaction_edit.html": """
+<!doctype html>
+<html>
+<head><title>Edit Transaction</title>""" + BASE_STYLE + """</head>
+<body>
+  <h1>Edit Transaction</h1>
+
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+  <p class="muted">Type: {{ transaction.type }} | Account ID: {{ transaction.account_id }}</p>
+
+  <form method="post" action="/ui/transactions/{{ transaction.id }}/edit">
+    <label>Category
+      <select name="category_id">
+        <option value="">None</option>
+        {% for category in categories %}
+        <option value="{{ category.id }}" {% if transaction.category_id and transaction.category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Amount (minor units)<input type="number" name="amount" min="1" value="{{ transaction.amount }}" required></label>
+    <label>Description<input type="text" name="description" value="{{ transaction.description or '' }}"></label>
+    <label>Occurred at<input type="text" name="occurred_at" value="{{ transaction.occurred_at }}"></label>
+    <button type="submit">Save</button>
+  </form>
+
+  <p><a href="/ui/transactions">Back to transactions</a></p>
+</body>
+</html>
+""",
 }

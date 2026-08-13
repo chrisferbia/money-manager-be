@@ -10,3 +10,15 @@ CREATE TABLE IF NOT EXISTS categories (
     name TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    category_id INTEGER REFERENCES categories(id),
+    related_account_id INTEGER REFERENCES accounts(id),
+    amount INTEGER NOT NULL,
+    description TEXT,
+    occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
