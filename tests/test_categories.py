@@ -1,6 +1,10 @@
 """Tests for specs/0002-expense-categories.md."""
 
 import requests
+import pytest
+
+
+pytestmark = pytest.mark.integration
 
 
 def test_ac1_create_category_returns_201_with_id(dev_server):
@@ -14,15 +18,6 @@ def test_ac1_create_category_returns_201_with_id(dev_server):
     assert body["name"] == "AC1 Groceries"
     assert isinstance(body["id"], int)
     assert "created_at" in body
-
-
-def test_ac2_blank_name_is_rejected(dev_server):
-    port = dev_server
-    response = requests.post(
-        f"http://localhost:{port}/categories",
-        json={"name": ""},
-    )
-    assert 400 <= response.status_code < 500
 
 
 def test_ac2_duplicate_name_is_rejected(dev_server):

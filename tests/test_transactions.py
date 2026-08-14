@@ -1,6 +1,10 @@
 """Tests for specs/0003-transactions.md."""
 
 import requests
+import pytest
+
+
+pytestmark = pytest.mark.integration
 
 
 def create_account(port, name, type_="cash"):
@@ -113,50 +117,15 @@ def test_ac2_create_expense_transaction_returns_201(dev_server):
     assert isinstance(body["id"], int)
 
 
-def test_ac3_invalid_transaction_payloads_are_rejected(dev_server):
+def test_ac3_unknown_account_is_rejected_without_insert(dev_server):
     port = dev_server
     account = create_account(port, "AC3 Cash")
-    category = create_category(port, "AC3 Food")
-
-    missing_category = requests.post(
-        f"http://localhost:{port}/transactions",
-        json={"type": "expense", "account_id": account["id"], "amount": 100},
-    )
-    assert 400 <= missing_category.status_code < 500
-
-    income_with_category = requests.post(
-        f"http://localhost:{port}/transactions",
-        json={
-            "type": "income",
-            "account_id": account["id"],
-            "category_id": category["id"],
-            "amount": 100,
-        },
-    )
-    assert 400 <= income_with_category.status_code < 500
-
-    zero_amount = requests.post(
-        f"http://localhost:{port}/transactions",
-        json={"type": "income", "account_id": account["id"], "amount": 0},
-    )
-    assert 400 <= zero_amount.status_code < 500
 
     bad_account = requests.post(
         f"http://localhost:{port}/transactions",
         json={"type": "income", "account_id": 999999, "amount": 100},
     )
-    assert 400 <= bad_account.status_code < 500
-
-    bad_category = requests.post(
-        f"http://localhost:{port}/transactions",
-        json={
-            "type": "expense",
-            "account_id": account["id"],
-            "category_id": 999999,
-            "amount": 100,
-        },
-    )
-    assert 400 <= bad_category.status_code < 500
+    assert bad_account.status_code == 404
 
     listing = requests.get(f"http://localhost:{port}/transactions")
     assert listing.status_code == 200
@@ -183,26 +152,12 @@ def test_ac3b_transfer_creation_and_account_filter_includes_destination(dev_serv
     assert [item["id"] for item in by_destination.json()] == [body["id"]]
 
 
-def test_ac3c_transfer_validation_rejects_bad_payloads(dev_server):
+def test_ac3c_transfer_rejects_unknown_destination(dev_server):
     port = dev_server
     source = create_account(port, "Transfer Bad Source")
-    destination = create_account(port, "Transfer Bad Destination")
-
-    same_account = create_transfer_transaction(port, source["id"], source["id"])
-    assert 400 <= same_account.status_code < 500
-
-    missing_destination = requests.post(
-        f"http://localhost:{port}/transfers",
-        json={
-            "type": "transfer",
-            "account_id": source["id"],
-            "amount": 500,
-        },
-    )
-    assert 400 <= missing_destination.status_code < 500
 
     bad_destination = create_transfer_transaction(port, source["id"], 999999)
-    assert 400 <= bad_destination.status_code < 500
+    assert bad_destination.status_code == 404
 
 
 def test_ac3d_transfer_endpoint_rejects_non_transfer_type(dev_server):

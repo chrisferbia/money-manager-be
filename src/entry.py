@@ -1,12 +1,6 @@
-from fastapi import FastAPI
 from workers import WorkerEntrypoint
 
-import api
-import ui
-
-app = FastAPI()
-app.include_router(api.router)
-app.include_router(ui.router)
+from app import app
 
 
 class Default(WorkerEntrypoint):

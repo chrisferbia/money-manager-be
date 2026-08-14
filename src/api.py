@@ -28,8 +28,20 @@ from models import (
     TransactionCreate,
     TransactionUpdate,
 )
+from domain import validate_transaction_rules, validate_transfer_rules
 
 router = APIRouter()
+
+
+@router.post("/__test/reset", status_code=204)
+async def reset_test_database(request: Request):
+    if getattr(request.scope["env"], "TEST_MODE", None) != "true":
+        raise HTTPException(status_code=404, detail="Not found")
+
+    conn = db(request)
+    await conn.prepare("DELETE FROM transactions").run()
+    await conn.prepare("DELETE FROM categories").run()
+    await conn.prepare("DELETE FROM accounts").run()
 
 
 def _now_iso():
@@ -193,24 +205,18 @@ async def create_transaction(payload: TransactionCreate, request: Request):
     if not await account_exists(conn, payload.account_id):
         raise HTTPException(status_code=404, detail="Account not found")
 
+    try:
+        validate_transaction_rules(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     category_id = None
     related_account_id = None
-    if payload.type == "income":
-        if payload.category_id is not None:
-            raise HTTPException(status_code=400, detail="Income transactions cannot have a category")
-    elif payload.type == "expense":
-        if payload.category_id is None:
-            raise HTTPException(status_code=400, detail="Expense transactions require a category")
+    if payload.type == "expense":
         if not await category_exists(conn, payload.category_id):
             raise HTTPException(status_code=404, detail="Category not found")
         category_id = payload.category_id
-    else:
-        if payload.category_id is not None:
-            raise HTTPException(status_code=400, detail="Transfer transactions cannot have a category")
-        if payload.related_account_id is None:
-            raise HTTPException(status_code=400, detail="Transfer transactions require a destination account")
-        if payload.related_account_id == payload.account_id:
-            raise HTTPException(status_code=400, detail="Transfer accounts must differ")
+    elif payload.type == "transfer":
         if not await account_exists(conn, payload.related_account_id):
             raise HTTPException(status_code=404, detail="Account not found")
         related_account_id = payload.related_account_id
@@ -241,14 +247,12 @@ async def create_transfer(payload: TransactionCreate, request: Request):
 
     if not await account_exists(conn, payload.account_id):
         raise HTTPException(status_code=404, detail="Account not found")
-    if payload.related_account_id is None:
-        raise HTTPException(status_code=400, detail="Transfer transactions require a destination account")
-    if payload.related_account_id == payload.account_id:
-        raise HTTPException(status_code=400, detail="Transfer accounts must differ")
+    try:
+        validate_transfer_rules(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not await account_exists(conn, payload.related_account_id):
         raise HTTPException(status_code=404, detail="Account not found")
-    if payload.category_id is not None:
-        raise HTTPException(status_code=400, detail="Transfer transactions cannot have a category")
 
     occurred_at = _normalize_occurred_at(payload.occurred_at)
     description = payload.description if payload.description != "" else None

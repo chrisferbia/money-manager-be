@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from fake_d1 import InProcessRequests, create_client
+
 REPO_ROOT = Path(__file__).parents[1]
 D1_DATABASE_NAME = "money-manager"
 
@@ -20,64 +22,20 @@ def find_free_port():
     return port
 
 
-def reset_local_db():
-    """Apply db_init.sql then clear leftover rows so each test run starts clean."""
+@pytest.fixture(scope="session")
+def initialize_local_db():
+    """Create the local D1 schema once for the test session."""
     subprocess.run(
         [
-            "uv",
-            "run",
-            "pywrangler",
+            "npx.cmd",
+            "--yes",
+            "wrangler",
             "d1",
             "execute",
             D1_DATABASE_NAME,
             "--local",
             "--file",
             "db_init.sql",
-        ],
-        cwd=REPO_ROOT,
-        check=True,
-    )
-    subprocess.run(
-        [
-            "uv",
-            "run",
-            "pywrangler",
-            "d1",
-            "execute",
-            D1_DATABASE_NAME,
-            "--local",
-            "--command",
-            "DELETE FROM transactions;",
-        ],
-        cwd=REPO_ROOT,
-        check=True,
-    )
-    subprocess.run(
-        [
-            "uv",
-            "run",
-            "pywrangler",
-            "d1",
-            "execute",
-            D1_DATABASE_NAME,
-            "--local",
-            "--command",
-            "DELETE FROM accounts;",
-        ],
-        cwd=REPO_ROOT,
-        check=True,
-    )
-    subprocess.run(
-        [
-            "uv",
-            "run",
-            "pywrangler",
-            "d1",
-            "execute",
-            D1_DATABASE_NAME,
-            "--local",
-            "--command",
-            "DELETE FROM categories;",
         ],
         cwd=REPO_ROOT,
         check=True,
@@ -90,7 +48,16 @@ def pywrangler_dev_server():
     port = find_free_port()
 
     process = subprocess.Popen(
-        ["uv", "run", "pywrangler", "dev", "--port", str(port)],
+        [
+            "uv",
+            "run",
+            "pywrangler",
+            "dev",
+            "--port",
+            str(port),
+            "--var",
+            "TEST_MODE:true",
+        ],
         cwd=REPO_ROOT,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -126,9 +93,34 @@ def pywrangler_dev_server():
             process.kill()
 
 
-@pytest.fixture(scope="module")
-def dev_server():
-    """Resets the local D1 accounts table, then yields a running Worker's port."""
-    reset_local_db()
+@pytest.fixture(scope="session")
+def inprocess_app():
+    from app import app
+
+    database, client = create_client(app, (REPO_ROOT / "db_init.sql").read_text())
+    with client:
+        yield database, client
+
+
+@pytest.fixture(scope="session")
+def worker_server(initialize_local_db):
+    """Yield one real Worker's port for explicit Worker smoke tests."""
     with pywrangler_dev_server() as port:
         yield port
+
+
+@pytest.fixture(scope="session")
+def dev_server(inprocess_app):
+    """Provide a compatibility port while tests run in-process."""
+    yield 0
+
+
+@pytest.fixture(autouse=True)
+def clean_local_db(request):
+    """Reset the in-memory D1 and route HTTP calls through TestClient."""
+    if not request.node.get_closest_marker("integration"):
+        return
+
+    database, client = request.getfixturevalue("inprocess_app")
+    request.module.requests = InProcessRequests(client)
+    database.reset()

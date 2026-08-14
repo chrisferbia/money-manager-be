@@ -16,7 +16,15 @@ dev = [
     "workers-runtime-sdk",
     "pytest",
     "requests",
+    "httpx2",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not worker'"
+pythonpath = ["src"]
+markers = [
+    "integration: tests that start the Worker and use local D1",
+    "unit: fast tests that do not require the Worker or D1",
+    "worker: smoke tests against the real PyWrangler Worker runtime",
+]

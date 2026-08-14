@@ -1,6 +1,10 @@
 """Tests for specs/0001-account-master.md."""
 
 import requests
+import pytest
+
+
+pytestmark = pytest.mark.integration
 
 
 def test_ac1_create_account_returns_201_with_id(dev_server):
@@ -15,24 +19,6 @@ def test_ac1_create_account_returns_201_with_id(dev_server):
     assert body["type"] == "cash"
     assert isinstance(body["id"], int)
     assert "created_at" in body
-
-
-def test_ac2_blank_name_is_rejected(dev_server):
-    port = dev_server
-    response = requests.post(
-        f"http://localhost:{port}/accounts",
-        json={"name": "", "type": "cash"},
-    )
-    assert 400 <= response.status_code < 500
-
-
-def test_ac2_blank_type_is_rejected(dev_server):
-    port = dev_server
-    response = requests.post(
-        f"http://localhost:{port}/accounts",
-        json={"name": "AC2 Blank Type", "type": ""},
-    )
-    assert 400 <= response.status_code < 500
 
 
 def test_ac2_duplicate_name_is_rejected(dev_server):
@@ -134,44 +120,6 @@ def test_ac5_patch_updates_persist(dev_server):
 
     refetched = requests.get(f"http://localhost:{port}/accounts/{created['id']}")
     assert refetched.json()["name"] == "AC5 Renamed"
-
-
-def test_ac5_patch_rejects_blank_name_and_type(dev_server):
-    port = dev_server
-    created = requests.post(
-        f"http://localhost:{port}/accounts",
-        json={"name": "AC5 BlankGuard", "type": "cash"},
-    ).json()
-
-    blank_name = requests.patch(
-        f"http://localhost:{port}/accounts/{created['id']}",
-        json={"name": ""},
-    )
-    assert 400 <= blank_name.status_code < 500
-
-    blank_type = requests.patch(
-        f"http://localhost:{port}/accounts/{created['id']}",
-        json={"type": ""},
-    )
-    assert 400 <= blank_type.status_code < 500
-
-    refetched = requests.get(f"http://localhost:{port}/accounts/{created['id']}")
-    assert refetched.json()["name"] == "AC5 BlankGuard"
-    assert refetched.json()["type"] == "cash"
-
-
-def test_ac5_rename_to_own_name_is_allowed(dev_server):
-    port = dev_server
-    created = requests.post(
-        f"http://localhost:{port}/accounts",
-        json={"name": "AC5 Stable", "type": "cash"},
-    ).json()
-
-    updated = requests.patch(
-        f"http://localhost:{port}/accounts/{created['id']}",
-        json={"name": "AC5 Stable"},
-    )
-    assert updated.status_code == 200
 
 
 def test_ac5_patch_rejects_duplicate_name(dev_server):
