@@ -33,17 +33,6 @@ from domain import validate_transaction_rules, validate_transfer_rules
 router = APIRouter()
 
 
-@router.post("/__test/reset", status_code=204)
-async def reset_test_database(request: Request):
-    if getattr(request.scope["env"], "TEST_MODE", None) != "true":
-        raise HTTPException(status_code=404, detail="Not found")
-
-    conn = db(request)
-    await conn.prepare("DELETE FROM transactions").run()
-    await conn.prepare("DELETE FROM categories").run()
-    await conn.prepare("DELETE FROM accounts").run()
-
-
 def _now_iso():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 

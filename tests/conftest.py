@@ -55,8 +55,6 @@ def pywrangler_dev_server():
             "dev",
             "--port",
             str(port),
-            "--var",
-            "TEST_MODE:true",
         ],
         cwd=REPO_ROOT,
         stdout=subprocess.PIPE,

@@ -54,7 +54,7 @@ class InProcessApp:
 
     async def __call__(self, scope, receive, send):
         scope = dict(scope)
-        scope["env"] = SimpleNamespace(TEST_MODE="true", money_manager=self.database)
+        scope["env"] = SimpleNamespace(money_manager=self.database)
         await self.app(scope, receive, send)
 
 
