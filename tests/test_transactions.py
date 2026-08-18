@@ -16,10 +16,10 @@ def create_account(port, name, type_="cash"):
     return response.json()
 
 
-def create_category(port, name):
+def create_category(port, name, type_="expense"):
     response = requests.post(
         f"http://localhost:{port}/categories",
-        json={"name": name},
+        json={"name": name, "type": type_},
     )
     assert response.status_code == 201
     return response.json()
@@ -100,6 +100,30 @@ def test_ac1_create_income_transaction_returns_201(dev_server):
     assert body["category_id"] is None
     assert body["amount"] == 1000
     assert isinstance(body["id"], int)
+
+
+def test_ac1_income_transaction_can_have_category(dev_server):
+    port = dev_server
+    account = create_account(port, "AC1 Categorized Income")
+    category = create_category(port, "AC1 Salary", type_="income")
+
+    response = create_income_transaction(port, account["id"], category_id=category["id"])
+
+    assert response.status_code == 201
+    assert response.json()["category_id"] == category["id"]
+
+
+def test_transaction_category_type_must_match_transaction_type(dev_server):
+    port = dev_server
+    account = create_account(port, "Category Type Account")
+    income_category = create_category(port, "Salary", type_="income")
+    expense_category = create_category(port, "Groceries", type_="expense")
+
+    income = create_income_transaction(port, account["id"], category_id=expense_category["id"])
+    expense = create_expense_transaction(port, account["id"], income_category["id"])
+
+    assert income.status_code == 400
+    assert expense.status_code == 400
 
 
 def test_ac2_create_expense_transaction_returns_201(dev_server):
@@ -433,6 +457,21 @@ def test_ac6_ui_balance_and_report_pages_render(dev_server):
     assert "UI Report Category" in report_page.text
 
 
+def test_transaction_form_has_type_specific_account_and_category_controls(dev_server):
+    port = dev_server
+    create_category(port, "UI Salary Category", type_="income")
+    create_category(port, "UI Food Category", type_="expense")
+
+    page = requests.get(f"http://localhost:{port}/ui/transactions")
+
+    assert page.status_code == 200
+    assert 'id="destination-account-field"' in page.text
+    assert 'id="category-field"' in page.text
+    assert 'data-category-type="income"' in page.text
+    assert 'data-category-type="expense"' in page.text
+    assert 'transactionType.value === "transfer"' in page.text
+
+
 def test_ac5_expenses_by_category_date_filter_is_inclusive(dev_server):
     port = dev_server
     account = create_account(port, "Report Inclusive", type_="debit_card")
@@ -458,3 +497,39 @@ def test_ac7_ui_balance_page_shows_zero_for_empty_account(dev_server):
     assert page.status_code == 200
     assert account["name"] in page.text
     assert ">0<" in page.text or " 0 " in page.text
+
+
+def test_dashboard_date_range_limits_period_summary_and_report(dev_server):
+    port = dev_server
+    account = create_account(port, "Dashboard Range Account")
+    category = create_category(port, "Dashboard Range Category")
+
+    assert create_income(
+        port, account["id"], 1000, occurred_at="2026-08-01T10:00:00Z"
+    ).status_code == 201
+    assert create_expense(
+        port,
+        account["id"],
+        category["id"],
+        250,
+        occurred_at="2026-08-15T10:00:00Z",
+    ).status_code == 201
+    assert create_expense(
+        port,
+        account["id"],
+        category["id"],
+        900,
+        occurred_at="2026-08-31T23:59:59Z",
+    ).status_code == 201
+
+    page = requests.get(
+        f"http://localhost:{port}/",
+        params={"from": "2026-08-01", "to": "2026-08-15"},
+    )
+
+    assert page.status_code == 200
+    assert "Period income" in page.text
+    assert ">1000<" in page.text
+    assert ">250<" in page.text
+    assert ">750<" in page.text
+    assert ">900<" not in page.text

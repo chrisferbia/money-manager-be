@@ -7,11 +7,10 @@ from models import TransactionCreate
 pytestmark = pytest.mark.unit
 
 
-def test_income_cannot_have_category():
+def test_income_may_have_category():
     payload = TransactionCreate(type="income", account_id=1, amount=100, category_id=2)
 
-    with pytest.raises(ValueError, match="cannot have a category"):
-        validate_transaction_rules(payload)
+    validate_transaction_rules(payload)
 
 
 def test_expense_requires_category():

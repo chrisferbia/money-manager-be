@@ -1,4 +1,5 @@
 from api import _normalize_occurred_at
+from ui import _month_bounds
 import pytest
 
 
@@ -30,3 +31,14 @@ def test_normalize_occurred_at_falls_back_for_invalid_timestamp():
 
     assert normalized.endswith("Z")
     assert "T" in normalized
+
+
+def test_month_bounds_cover_the_full_selected_month():
+    assert _month_bounds("2026-02") == (
+        "2026-02-01T00:00:00Z",
+        "2026-02-28T23:59:59Z",
+    )
+
+
+def test_month_bounds_reject_invalid_month():
+    assert _month_bounds("2026-13") == (None, None)

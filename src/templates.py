@@ -2,25 +2,48 @@ BASE_STYLE = """
 <style>
   body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; color: #1a1a1a; }
   h1 { font-size: 1.4rem; }
+  .site-header { margin-bottom: 2rem; }
+  .site-header h1 { margin-bottom: 0.75rem; }
+  .site-header h1 a { color: inherit; text-decoration: none; }
+  nav a { margin-right: 0.75rem; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 1.5rem; }
   th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid #ddd; }
   form.inline { display: inline; }
   .error { color: #b00020; margin-bottom: 1rem; }
   .actions a, .actions button { margin-right: 0.5rem; }
+  .date-filter { display: flex; gap: 0.75rem; align-items: end; margin-bottom: 1.5rem; }
+  .date-filter label { flex: 1; margin-top: 0; }
+  .date-filter a { padding-bottom: 0.45rem; }
+  .date-filter details { flex-basis: 100%; }
+  .date-filter summary { cursor: pointer; margin-top: 0.75rem; }
   fieldset { border: 1px solid #ddd; padding: 1rem; }
   label { display: block; margin-top: 0.5rem; }
   input, select { padding: 0.3rem; width: 100%; box-sizing: border-box; }
   button { margin-top: 1rem; padding: 0.4rem 1rem; }
   .muted { color: #666; }
   .pill { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 999px; background: #eee; }
+  @media (max-width: 600px) { .date-filter { display: block; } .date-filter button, .date-filter a { display: inline-block; margin-right: 0.75rem; } }
 </style>
+"""
+
+SITE_HEADER = """
+<header class="site-header">
+  <h1><a href="/">Money Manager</a></h1>
+  <nav class="actions">
+    <a href="/">Dashboard</a>
+    <a href="/ui/accounts">Accounts</a>
+    <a href="/ui/transactions">Transactions</a>
+    <a href="/ui/categories">Categories</a>
+    <a href="/ui/reports/expenses-by-category">Reports</a>
+  </nav>
+</header>
 """
 
 ACCOUNTS_LIST = """
 <!doctype html>
 <html>
 <head><title>Accounts</title>""" + BASE_STYLE + """</head>
-<body>
+<body>""" + SITE_HEADER + """
   <h1>Accounts</h1>
 
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
@@ -68,18 +91,19 @@ CATEGORIES_LIST = """
 <!doctype html>
 <html>
 <head><title>Categories</title>""" + BASE_STYLE + """</head>
-<body>
+<body>""" + SITE_HEADER + """
   <h1>Categories</h1>
 
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
    <table>
-    <thead><tr><th>Name</th><th>Created</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Type</th><th>Created</th><th></th></tr></thead>
     <tbody>
       {% for category in categories %}
       <tr>
-        <td>{{ category.name }}</td>
-        <td>{{ category.created_at }}</td>
+       <td>{{ category.name }}</td>
+        <td>{{ category.type }}</td>
+       <td>{{ category.created_at }}</td>
         <td class="actions">
           <a href="/ui/categories/{{ category.id }}/edit">Edit</a>
           <form class="inline" method="post" action="/ui/categories/{{ category.id }}/delete">
@@ -88,7 +112,7 @@ CATEGORIES_LIST = """
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="3">No categories yet.</td></tr>
+      <tr><td colspan="4">No categories yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -97,6 +121,12 @@ CATEGORIES_LIST = """
     <legend>Add category</legend>
     <form method="post" action="/ui/categories">
       <label>Name<input type="text" name="name" value="{{ form_name }}" required></label>
+      <label>Type
+        <select id="transaction-type" name="type">
+          <option value="income" {% if form_type == "income" %}selected{% endif %}>income</option>
+          <option value="expense" {% if form_type == "expense" %}selected{% endif %}>expense</option>
+        </select>
+      </label>
       <button type="submit">Add</button>
     </form>
   </fieldset>
@@ -108,7 +138,7 @@ EXPENSES_BY_CATEGORY = """
 <!doctype html>
 <html>
 <head><title>Expenses by Category</title>""" + BASE_STYLE + """</head>
-<body>
+<body>""" + SITE_HEADER + """
   <h1>Expenses by Category</h1>
 
   <form method="get" action="/ui/reports/expenses-by-category">
@@ -138,12 +168,13 @@ CATEGORY_EDIT = """
 <!doctype html>
 <html>
 <head><title>Edit Category</title>""" + BASE_STYLE + """</head>
-<body>
+<body>""" + SITE_HEADER + """
   <h1>Edit Category</h1>
 
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
   <form method="post" action="/ui/categories/{{ category.id }}/edit">
+    <p class="muted">Type: {{ category.type }}</p>
     <label>Name<input type="text" name="name" value="{{ category.name }}" required></label>
     <button type="submit">Save</button>
   </form>
@@ -157,7 +188,7 @@ ACCOUNT_EDIT = """
 <!doctype html>
 <html>
 <head><title>Edit Account</title>""" + BASE_STYLE + """</head>
-<body>
+<body>""" + SITE_HEADER + """
   <h1>Edit Account</h1>
 
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
@@ -183,21 +214,23 @@ TEMPLATES = {
 <!doctype html>
 <html>
 <head><title>Money Manager</title>""" + BASE_STYLE + """</head>
-<body>
-  <h1>Money Manager</h1>
+<body>""" + SITE_HEADER + """
 
-  <nav class="actions">
-    <a href="/">Dashboard</a>
-    <a href="/ui/accounts">Accounts</a>
-    <a href="/ui/transactions">Transactions</a>
-    <a href="/ui/categories">Categories</a>
-    <a href="/ui/reports/expenses-by-category">Reports</a>
-  </nav>
+  <form class="date-filter" method="get" action="/">
+    <label>Month<input type="month" name="month" value="{{ month_value }}"></label>
+    <button type="submit">Apply range</button>
+    {% if month_value or from_value or to_value %}<a href="/">Clear</a>{% endif %}
+    <details>
+      <summary>Custom date range (optional)</summary>
+      <label>From<input type="date" name="from" value="{{ from_value }}"></label>
+      <label>To<input type="date" name="to" value="{{ to_value }}"></label>
+    </details>
+  </form>
 
   <table>
-    <thead><tr><th>Total balance</th><th>Recent income</th><th>Recent expense</th></tr></thead>
+    <thead><tr><th>Total balance</th><th>Period income</th><th>Period expense</th><th>Net change</th></tr></thead>
     <tbody>
-      <tr><td>{{ total_balance }}</td><td>{{ total_income }}</td><td>{{ total_expense }}</td></tr>
+      <tr><td>{{ total_balance }}</td><td>{{ total_income }}</td><td>{{ total_expense }}</td><td>{{ net_change }}</td></tr>
     </tbody>
   </table>
 
@@ -220,7 +253,7 @@ TEMPLATES = {
     </tbody>
   </table>
 
-  <h2>Recent activity</h2>
+  <h2>Recent activity in selected period</h2>
   <table>
     <thead><tr><th>Type</th><th>From</th><th>To</th><th>Amount</th><th>Occurred</th></tr></thead>
     <tbody>
@@ -261,7 +294,7 @@ TEMPLATES = {
 <!doctype html>
 <html>
 <head><title>Transactions</title>""" + BASE_STYLE + """</head>
-<body>
+<body>""" + SITE_HEADER + """
   <h1>Transactions</h1>
 
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
@@ -324,7 +357,7 @@ TEMPLATES = {
           {% endfor %}
         </select>
       </label>
-      <label>Destination account
+      <label id="destination-account-field" {% if form.type != "transfer" %}hidden{% endif %}>Destination account
         <select name="related_account_id">
           <option value="">None</option>
           {% for account in accounts %}
@@ -332,11 +365,11 @@ TEMPLATES = {
           {% endfor %}
         </select>
       </label>
-      <label>Category
-        <select name="category_id">
+      <label id="category-field" {% if form.type == "transfer" %}hidden{% endif %}>Category
+        <select id="transaction-category" name="category_id">
           <option value="">None</option>
           {% for category in categories %}
-          <option value="{{ category.id }}" {% if form.category_id|string == category.id|string %}selected{% endif %}>{{ category.name }}</option>
+          <option value="{{ category.id }}" data-category-type="{{ category.type }}" {% if category.type != form.type %}hidden{% endif %} {% if form.category_id|string == category.id|string %}selected{% endif %}>{{ category.name }}</option>
           {% endfor %}
         </select>
       </label>
@@ -346,6 +379,23 @@ TEMPLATES = {
       <button type="submit">Add</button>
     </form>
   </fieldset>
+  <script>
+    const transactionType = document.querySelector('#transaction-type');
+    const destinationField = document.querySelector('#destination-account-field');
+    const categoryField = document.querySelector('#category-field');
+    const categorySelect = document.querySelector('#transaction-category');
+    function filterCategories() {
+      const isTransfer = transactionType.value === "transfer";
+      destinationField.hidden = !isTransfer;
+      categoryField.hidden = isTransfer;
+      for (const option of categorySelect.options) {
+        if (option.value) option.hidden = isTransfer || option.dataset.categoryType !== transactionType.value;
+      }
+      if (categorySelect.selectedOptions[0]?.hidden) categorySelect.value = "";
+    }
+    transactionType.addEventListener("change", filterCategories);
+    filterCategories();
+  </script>
 </body>
 </html>
 """,
@@ -353,7 +403,7 @@ TEMPLATES = {
 <!doctype html>
 <html>
 <head><title>Edit Transaction</title>""" + BASE_STYLE + """</head>
-<body>
+<body>""" + SITE_HEADER + """
   <h1>Edit Transaction</h1>
 
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
@@ -365,7 +415,9 @@ TEMPLATES = {
           <option value="">None</option>
           {% if transaction.type != "transfer" %}
           {% for category in categories %}
+          {% if category.type == transaction.type %}
           <option value="{{ category.id }}" {% if transaction.category_id and transaction.category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
+          {% endif %}
           {% endfor %}
           {% endif %}
         </select>

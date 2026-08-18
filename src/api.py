@@ -9,6 +9,7 @@ from db import (
     expenses_by_category,
     category_name_taken,
     category_exists,
+    category_matches_type,
     db,
     fetch_account,
     fetch_category,
@@ -137,8 +138,8 @@ async def create_category(payload: CategoryCreate, request: Request):
         raise HTTPException(status_code=409, detail="Category name already exists")
 
     result = (
-        await conn.prepare("INSERT INTO categories (name) VALUES (?)")
-        .bind(payload.name)
+        await conn.prepare("INSERT INTO categories (name, type) VALUES (?, ?)")
+        .bind(payload.name, payload.type)
         .run()
     )
     return await fetch_category(conn, result.meta.last_row_id)
@@ -147,7 +148,7 @@ async def create_category(payload: CategoryCreate, request: Request):
 @router.get("/categories", response_model=list[Category])
 async def list_categories(request: Request):
     conn = db(request)
-    result = await conn.prepare("SELECT id, name, created_at FROM categories ORDER BY id").all()
+    result = await conn.prepare("SELECT id, name, type, created_at FROM categories ORDER BY id").all()
     return result.results
 
 
@@ -201,9 +202,14 @@ async def create_transaction(payload: TransactionCreate, request: Request):
 
     category_id = None
     related_account_id = None
-    if payload.type == "expense":
-        if not await category_exists(conn, payload.category_id):
-            raise HTTPException(status_code=404, detail="Category not found")
+    if payload.type in ("income", "expense"):
+        if payload.type == "expense" and payload.category_id is None:
+            raise HTTPException(status_code=400, detail="Expense transactions require a category")
+        if payload.category_id is not None:
+            if not await category_exists(conn, payload.category_id):
+                raise HTTPException(status_code=404, detail="Category not found")
+            if not await category_matches_type(conn, payload.category_id, payload.type):
+                raise HTTPException(status_code=400, detail="Category type must match transaction type")
         category_id = payload.category_id
     elif payload.type == "transfer":
         if not await account_exists(conn, payload.related_account_id):
@@ -312,9 +318,12 @@ async def update_transaction(transaction_id: int, payload: TransactionUpdate, re
     )
 
     if existing["type"] == "income":
-        if "category_id" in payload.model_fields_set and payload.category_id is not None:
-            raise HTTPException(status_code=400, detail="Income transactions cannot have a category")
-        category_id = None
+        category_id = payload.category_id if "category_id" in payload.model_fields_set else existing["category_id"]
+        if category_id is not None:
+            if not await category_exists(conn, category_id):
+                raise HTTPException(status_code=404, detail="Category not found")
+            if not await category_matches_type(conn, category_id, "income"):
+                raise HTTPException(status_code=400, detail="Category type must match transaction type")
     elif existing["type"] == "expense":
         if "category_id" in payload.model_fields_set:
             if payload.category_id is None:
@@ -326,6 +335,8 @@ async def update_transaction(transaction_id: int, payload: TransactionUpdate, re
             raise HTTPException(status_code=400, detail="Expense transactions require a category")
         if not await category_exists(conn, category_id):
             raise HTTPException(status_code=404, detail="Category not found")
+        if not await category_matches_type(conn, category_id, "expense"):
+            raise HTTPException(status_code=400, detail="Category type must match transaction type")
     else:
         category_id = None
         if existing["related_account_id"] is None:

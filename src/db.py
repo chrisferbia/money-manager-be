@@ -30,7 +30,7 @@ async def account_name_taken(conn, name: str, exclude_id: Optional[int] = None) 
 
 async def fetch_category(conn, category_id: int):
     row = (
-        await conn.prepare("SELECT id, name, created_at FROM categories WHERE id = ?")
+        await conn.prepare("SELECT id, name, type, created_at FROM categories WHERE id = ?")
         .bind(category_id)
         .first()
     )
@@ -67,6 +67,15 @@ async def account_exists(conn, account_id: int) -> bool:
 
 async def category_exists(conn, category_id: int) -> bool:
     row = await conn.prepare("SELECT id FROM categories WHERE id = ?").bind(category_id).first()
+    return row is not None
+
+
+async def category_matches_type(conn, category_id: int, type_: str) -> bool:
+    row = (
+        await conn.prepare("SELECT id FROM categories WHERE id = ? AND type = ?")
+        .bind(category_id, type_)
+        .first()
+    )
     return row is not None
 
 

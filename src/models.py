@@ -22,6 +22,7 @@ class Account(BaseModel):
 
 class CategoryCreate(BaseModel):
     name: str = Field(min_length=1)
+    type: Literal["income", "expense"] = "expense"
 
 
 class CategoryUpdate(BaseModel):
@@ -31,6 +32,7 @@ class CategoryUpdate(BaseModel):
 class Category(BaseModel):
     id: int
     name: str
+    type: Literal["income", "expense"] = "expense"
     created_at: str
 
 

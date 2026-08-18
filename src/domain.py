@@ -1,12 +1,9 @@
 def validate_transaction_rules(payload):
     """Validate rules that do not require a database lookup."""
-    if payload.type == "income":
-        if payload.category_id is not None:
-            raise ValueError("Income transactions cannot have a category")
-    elif payload.type == "expense":
+    if payload.type == "expense":
         if payload.category_id is None:
             raise ValueError("Expense transactions require a category")
-    else:
+    elif payload.type == "transfer":
         validate_transfer_rules(payload)
 
 

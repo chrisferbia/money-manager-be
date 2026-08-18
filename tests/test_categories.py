@@ -20,6 +20,17 @@ def test_ac1_create_category_returns_201_with_id(dev_server):
     assert "created_at" in body
 
 
+def test_ac1_category_type_is_returned(dev_server):
+    port = dev_server
+    response = requests.post(
+        f"http://localhost:{port}/categories",
+        json={"name": "Salary", "type": "income"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["type"] == "income"
+
+
 def test_ac2_duplicate_name_is_rejected(dev_server):
     port = dev_server
     first = requests.post(

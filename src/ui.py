@@ -1,3 +1,4 @@
+import calendar
 import jinja2
 import templates
 from fastapi import APIRouter, HTTPException, Request
@@ -16,7 +17,7 @@ from api import (
     update_category,
     update_transaction,
 )
-from db import db, expenses_by_category, fetch_account, fetch_category, fetch_transaction, list_transactions, list_accounts_with_balance, recent_transactions
+from db import db, expenses_by_category, fetch_account, fetch_category, fetch_transaction, list_transactions, list_accounts_with_balance
 from models import (
     AccountCreate,
     AccountUpdate,
@@ -33,16 +34,40 @@ jinja_env = jinja2.Environment(
 )
 
 
+def _dashboard_bound(value: str, end: bool = False):
+    if not value:
+        return None
+    if len(value) == 10:
+        return f"{value}T{'23:59:59' if end else '00:00:00'}Z"
+    return value
+
+
+def _month_bounds(value: str):
+    try:
+        year, month = (int(part) for part in value.split("-"))
+        last_day = calendar.monthrange(year, month)[1]
+    except (TypeError, ValueError):
+        return None, None
+    return f"{year:04d}-{month:02d}-01T00:00:00Z", f"{year:04d}-{month:02d}-{last_day:02d}T23:59:59Z"
+
+
 @router.get("/", response_class=HTMLResponse)
 async def ui_home(request: Request):
     conn = db(request)
+    month_value = request.query_params.get("month") or ""
+    from_value = request.query_params.get("from") or ""
+    to_value = request.query_params.get("to") or ""
+    month_from, month_to = _month_bounds(month_value)
+    from_bound = _dashboard_bound(from_value) if from_value else month_from
+    to_bound = _dashboard_bound(to_value, end=True) if to_value else month_to
     accounts = await list_accounts_with_balance(conn)
-    recent = await recent_transactions(conn, 5)
-    report = await expenses_by_category(conn)
+    period_transactions = await list_transactions(conn, from_=from_bound, to=to_bound)
+    recent = period_transactions[:5]
+    report = await expenses_by_category(conn, from_bound, to_bound)
     account_names = {account["id"]: account["name"] for account in accounts}
     total_balance = sum(account["balance"] for account in accounts)
-    total_income = sum(tx["amount"] for tx in recent if tx["type"] == "income")
-    total_expense = sum(tx["amount"] for tx in recent if tx["type"] == "expense")
+    total_income = sum(tx["amount"] for tx in period_transactions if tx["type"] == "income")
+    total_expense = sum(tx["amount"] for tx in period_transactions if tx["type"] == "expense")
     return jinja_env.get_template("home.html").render(
         accounts=accounts,
         recent_transactions=recent,
@@ -51,6 +76,10 @@ async def ui_home(request: Request):
         total_balance=total_balance,
         total_income=total_income,
         total_expense=total_expense,
+        net_change=total_income - total_expense,
+        month_value=month_value,
+        from_value=from_value,
+        to_value=to_value,
     )
 
 
@@ -146,9 +175,9 @@ async def ui_delete_account(account_id: int, request: Request):
 @router.get("/ui/categories", response_class=HTMLResponse)
 async def ui_list_categories(request: Request):
     conn = db(request)
-    result = await conn.prepare("SELECT id, name, created_at FROM categories ORDER BY id").all()
+    result = await conn.prepare("SELECT id, name, type, created_at FROM categories ORDER BY id").all()
     return jinja_env.get_template("categories_list.html").render(
-        categories=result.results, error=None, form_name=""
+        categories=result.results, error=None, form_name="", form_type="expense"
     )
 
 
@@ -156,22 +185,23 @@ async def ui_list_categories(request: Request):
 async def ui_create_category(request: Request):
     form = await request.form()
     name = (form.get("name") or "").strip()
+    type_ = form.get("type") or "expense"
 
     error = None
     try:
-        payload = CategoryCreate(name=name)
+        payload = CategoryCreate(name=name, type=type_)
         await create_category(payload, request)
     except ValidationError:
-        error = "Name is required"
+        error = "Name and type are required"
     except HTTPException as exc:
         error = exc.detail
     else:
         return RedirectResponse("/ui/categories", status_code=303)
 
     conn = db(request)
-    result = await conn.prepare("SELECT id, name, created_at FROM categories ORDER BY id").all()
+    result = await conn.prepare("SELECT id, name, type, created_at FROM categories ORDER BY id").all()
     return jinja_env.get_template("categories_list.html").render(
-        categories=result.results, error=error, form_name=name
+        categories=result.results, error=error, form_name=name, form_type=type_
     )
 
 
@@ -220,7 +250,7 @@ async def ui_list_transactions(request: Request):
     conn = db(request)
     transactions = await list_transactions(conn)
     accounts = await conn.prepare("SELECT id, name FROM accounts ORDER BY id").all()
-    categories = await conn.prepare("SELECT id, name FROM categories ORDER BY id").all()
+    categories = await conn.prepare("SELECT id, name, type FROM categories ORDER BY id").all()
     return jinja_env.get_template("transactions_list.html").render(
         transactions=transactions,
         accounts=accounts.results,
@@ -274,7 +304,7 @@ async def ui_create_transaction(request: Request):
     conn = db(request)
     transactions = await list_transactions(conn)
     accounts = await conn.prepare("SELECT id, name FROM accounts ORDER BY id").all()
-    categories = await conn.prepare("SELECT id, name FROM categories ORDER BY id").all()
+    categories = await conn.prepare("SELECT id, name, type FROM categories ORDER BY id").all()
     return jinja_env.get_template("transactions_list.html").render(
         transactions=transactions,
         accounts=accounts.results,
@@ -299,7 +329,7 @@ async def ui_edit_transaction_form(transaction_id: int, request: Request):
     if transaction is None:
         return RedirectResponse("/ui/transactions", status_code=303)
     accounts = await conn.prepare("SELECT id, name FROM accounts ORDER BY id").all()
-    categories = await conn.prepare("SELECT id, name FROM categories ORDER BY id").all()
+    categories = await conn.prepare("SELECT id, name, type FROM categories ORDER BY id").all()
     return jinja_env.get_template("transaction_edit.html").render(
         transaction=transaction,
         accounts=accounts.results,
@@ -339,7 +369,7 @@ async def ui_update_transaction(transaction_id: int, request: Request):
     if transaction is None:
         return RedirectResponse("/ui/transactions", status_code=303)
     accounts = await conn.prepare("SELECT id, name FROM accounts ORDER BY id").all()
-    categories = await conn.prepare("SELECT id, name FROM categories ORDER BY id").all()
+    categories = await conn.prepare("SELECT id, name, type FROM categories ORDER BY id").all()
     return jinja_env.get_template("transaction_edit.html").render(
         transaction={
             **transaction,
