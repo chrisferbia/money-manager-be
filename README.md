@@ -20,3 +20,6 @@ uv run pywrangler d1 execute money-manager --remote --file db_init.sql
 Run Worker tests explicitly:
 pytest -m worker
 pytest -m "unit or integration or worker"
+
+Test coverage
+pytest --cov=src --cov-report=term-missing
