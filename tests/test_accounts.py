@@ -157,6 +157,24 @@ def test_ac6_delete_account_then_get_returns_404(dev_server):
     assert refetched.status_code == 404
 
 
+def test_ui_delete_account_shows_transaction_conflict(dev_server):
+    port = dev_server
+    account = requests.post(
+        f"http://localhost:{port}/accounts",
+        json={"name": "UI Protected Account", "type": "cash"},
+    ).json()
+    transaction = requests.post(
+        f"http://localhost:{port}/transactions",
+        json={"type": "income", "account_id": account["id"], "amount": 100},
+    )
+    assert transaction.status_code == 201
+
+    response = requests.post(f"http://localhost:{port}/ui/accounts/{account['id']}/delete")
+
+    assert response.status_code == 200
+    assert "Account has transactions" in response.text
+
+
 def test_ac7_root_returns_dashboard_page(dev_server):
     port = dev_server
     response = requests.get(f"http://localhost:{port}/")

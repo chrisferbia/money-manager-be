@@ -163,12 +163,16 @@ async def ui_update_account(account_id: int, request: Request):
     )
 
 
-@router.post("/ui/accounts/{account_id}/delete")
+@router.post("/ui/accounts/{account_id}/delete", response_class=HTMLResponse)
 async def ui_delete_account(account_id: int, request: Request):
     try:
         await delete_account(account_id, request)
-    except HTTPException:
-        pass
+    except HTTPException as exc:
+        conn = db(request)
+        accounts = await list_accounts_with_balance(conn)
+        return jinja_env.get_template("accounts_list.html").render(
+            accounts=accounts, error=exc.detail, form_name="", form_type="cash"
+        )
     return RedirectResponse("/ui/accounts", status_code=303)
 
 
@@ -236,12 +240,18 @@ async def ui_update_category(category_id: int, request: Request):
     return jinja_env.get_template("category_edit.html").render(category=category, error=error)
 
 
-@router.post("/ui/categories/{category_id}/delete")
+@router.post("/ui/categories/{category_id}/delete", response_class=HTMLResponse)
 async def ui_delete_category(category_id: int, request: Request):
     try:
         await delete_category(category_id, request)
-    except HTTPException:
-        pass
+    except HTTPException as exc:
+        conn = db(request)
+        result = await conn.prepare(
+            "SELECT id, name, type, created_at FROM categories ORDER BY id"
+        ).all()
+        return jinja_env.get_template("categories_list.html").render(
+            categories=result.results, error=exc.detail, form_name="", form_type="expense"
+        )
     return RedirectResponse("/ui/categories", status_code=303)
 
 

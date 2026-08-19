@@ -74,10 +74,17 @@ ACCOUNTS_LIST = """
     <legend>Add account</legend>
     <form method="post" action="/ui/accounts">
       <label>Name<input type="text" name="name" value="{{ form_name }}" required></label>
-      <label>Type
+        <label>Type
         <select name="type">
           <option value="cash" {% if form_type == "cash" %}selected{% endif %}>cash</option>
+          <option value="bank" {% if form_type == "bank" %}selected{% endif %}>bank</option>
+          <option value="savings" {% if form_type == "savings" %}selected{% endif %}>savings</option>
           <option value="debit_card" {% if form_type == "debit_card" %}selected{% endif %}>debit_card</option>
+          <option value="credit_card" {% if form_type == "credit_card" %}selected{% endif %}>credit_card</option>
+          <option value="e_wallet" {% if form_type == "e_wallet" %}selected{% endif %}>e_wallet</option>
+          <option value="investment" {% if form_type == "investment" %}selected{% endif %}>investment</option>
+          <option value="loan" {% if form_type == "loan" %}selected{% endif %}>loan</option>
+          <option value="mortgage" {% if form_type == "mortgage" %}selected{% endif %}>mortgage</option>
         </select>
       </label>
       <button type="submit">Add</button>
@@ -195,10 +202,17 @@ ACCOUNT_EDIT = """
 
   <form method="post" action="/ui/accounts/{{ account.id }}/edit">
     <label>Name<input type="text" name="name" value="{{ account.name }}" required></label>
-    <label>Type
+      <label>Type
       <select name="type">
         <option value="cash" {% if account.type == "cash" %}selected{% endif %}>cash</option>
+        <option value="bank" {% if account.type == "bank" %}selected{% endif %}>bank</option>
+        <option value="savings" {% if account.type == "savings" %}selected{% endif %}>savings</option>
         <option value="debit_card" {% if account.type == "debit_card" %}selected{% endif %}>debit_card</option>
+        <option value="credit_card" {% if account.type == "credit_card" %}selected{% endif %}>credit_card</option>
+        <option value="e_wallet" {% if account.type == "e_wallet" %}selected{% endif %}>e_wallet</option>
+        <option value="investment" {% if account.type == "investment" %}selected{% endif %}>investment</option>
+        <option value="loan" {% if account.type == "loan" %}selected{% endif %}>loan</option>
+        <option value="mortgage" {% if account.type == "mortgage" %}selected{% endif %}>mortgage</option>
       </select>
     </label>
     <button type="submit">Save</button>

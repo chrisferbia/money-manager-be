@@ -138,3 +138,30 @@ def test_ac6_delete_category_then_get_returns_404(dev_server):
 
     refetched = requests.get(f"http://localhost:{port}/categories/{created['id']}")
     assert refetched.status_code == 404
+
+
+def test_ui_delete_category_shows_transaction_conflict(dev_server):
+    port = dev_server
+    account = requests.post(
+        f"http://localhost:{port}/accounts",
+        json={"name": "UI Category Account", "type": "cash"},
+    ).json()
+    category = requests.post(
+        f"http://localhost:{port}/categories",
+        json={"name": "UI Protected Category"},
+    ).json()
+    transaction = requests.post(
+        f"http://localhost:{port}/transactions",
+        json={
+            "type": "expense",
+            "account_id": account["id"],
+            "category_id": category["id"],
+            "amount": 100,
+        },
+    )
+    assert transaction.status_code == 201
+
+    response = requests.post(f"http://localhost:{port}/ui/categories/{category['id']}/delete")
+
+    assert response.status_code == 200
+    assert "Category has expense transactions" in response.text
