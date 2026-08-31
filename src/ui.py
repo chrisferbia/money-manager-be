@@ -271,6 +271,7 @@ async def ui_list_transactions(request: Request):
             "account_id": "",
             "related_account_id": "",
             "category_id": "",
+            "counterparty": "",
             "amount": "",
             "description": "",
             "occurred_at": "",
@@ -285,6 +286,7 @@ async def ui_create_transaction(request: Request):
     account_id = form.get("account_id") or ""
     related_account_id = form.get("related_account_id") or None
     category_id = form.get("category_id") or None
+    counterparty = (form.get("counterparty") or "").strip() or None
     amount = form.get("amount") or ""
     description = (form.get("description") or "").strip() or None
     occurred_at = (form.get("occurred_at") or "").strip() or None
@@ -296,6 +298,7 @@ async def ui_create_transaction(request: Request):
             account_id=account_id,
             related_account_id=related_account_id,
             category_id=category_id,
+            counterparty=counterparty,
             amount=amount,
             description=description,
             occurred_at=occurred_at,
@@ -325,6 +328,7 @@ async def ui_create_transaction(request: Request):
             "account_id": account_id,
             "related_account_id": related_account_id or "",
             "category_id": category_id or "",
+            "counterparty": counterparty or "",
             "amount": amount,
             "description": description or "",
             "occurred_at": occurred_at or "",
@@ -353,6 +357,7 @@ async def ui_update_transaction(transaction_id: int, request: Request):
     form = await request.form()
     amount = form.get("amount") or ""
     category_id = form.get("category_id") or None
+    counterparty = (form.get("counterparty") or "").strip() or None
     description = (form.get("description") or "").strip() or None
     occurred_at = (form.get("occurred_at") or "").strip() or None
 
@@ -361,6 +366,7 @@ async def ui_update_transaction(transaction_id: int, request: Request):
         payload = TransactionUpdate(
             amount=amount,
             category_id=category_id,
+            counterparty=counterparty,
             description=description,
             occurred_at=occurred_at,
         )
@@ -385,6 +391,7 @@ async def ui_update_transaction(transaction_id: int, request: Request):
             **transaction,
             "amount": amount,
             "category_id": category_id or transaction["category_id"],
+            "counterparty": counterparty if counterparty is not None else transaction["counterparty"],
             "description": description,
             "occurred_at": occurred_at or transaction["occurred_at"],
         },

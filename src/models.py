@@ -42,6 +42,7 @@ class TransactionCreate(BaseModel):
     related_account_id: Optional[int] = None
     category_id: Optional[int] = None
     amount: int = Field(gt=0)
+    counterparty: Optional[str] = None
     description: Optional[str] = None
     occurred_at: Optional[str] = None
 
@@ -51,6 +52,7 @@ class TransactionUpdate(BaseModel):
 
     amount: Optional[int] = Field(default=None, gt=0)
     category_id: Optional[int] = None
+    counterparty: Optional[str] = None
     description: Optional[str] = None
     occurred_at: Optional[str] = None
 
@@ -62,6 +64,8 @@ class Transaction(BaseModel):
     category_id: Optional[int] = None
     related_account_id: Optional[int] = None
     amount: int
+    counterparty: Optional[str] = None
     description: Optional[str] = None
     occurred_at: str
     created_at: str
+    transaction_subtype: Optional[str] = None

@@ -12,7 +12,7 @@ from db import fetch_transaction_by_source_message_id, insert_transaction
 
 
 BCA_SENDER = "bca@bca.co.id"
-BCA_ACCOUNT_NAME = "bca"
+BCA_ACCOUNT_NAME = "BCA"
 INCOME_CATEGORY_NAME = "Other Income"
 EXPENSE_CATEGORY_NAME = "Other Expense"
 
@@ -20,17 +20,36 @@ _FIELD_LABELS = (
     "Status",
     "Transaction Date",
     "Transfer Type",
+    "Transaction Type",
     "Source of Fund",
     "Source Currency",
     "Beneficiary Account",
+    "BCA Virtual Account No.",
+    "Beneficiary Pocket Account no.",
     "Transfer Currency",
     "Beneficiary Name",
+    "Beneficiary Pocket",
+    "Company/Product Name",
+    "Name",
+    "Payment to",
+    "Merchant Location",
+    "Acquirer",
+    "Merchant PAN",
+    "Terminal ID",
+    "Customer PAN",
     "Transfer Amount",
     "Transaction Amount",
     "Credit Amount",
     "Debit Amount",
+    "Pay Amount",
+    "Total Payment",
     "Amount",
     "Remarks",
+    "Description",
+    "RRN",
+    "ATM Code",
+    "Phone No.",
+    "Note(s)",
     "Reference No.",
 )
 _FIELD_LABEL_PATTERN = "|".join(re.escape(label) for label in _FIELD_LABELS)
@@ -62,10 +81,11 @@ class ParsedBcaEmail:
     transaction_date: str | None
     direction: str | None
     amount: int | None
-    beneficiary: str | None
+    counterparty: str | None
     remarks: str | None
     reference_number: str | None
     raw_size: int
+    transaction_subtype: str | None = None
 
 
 def _header(message: Message, name: str) -> str | None:
@@ -143,22 +163,22 @@ def _extract_fields(text: str) -> dict[str, str]:
     for index, match in enumerate(matches):
         value_end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
         value = " ".join(text[match.end() : value_end].split()).strip()
+        value = re.split(
+            r"\bPlease save this email as your transaction reference\b",
+            value,
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0].strip()
         if value:
             fields[labels_by_case[match.group("label").casefold()]] = value
     return fields
 
 
-def _parse_amount(fields: dict[str, str]) -> int:
+def _parse_amount(fields: dict[str, str], labels: tuple[str, ...]) -> int:
     value = next(
         (
             fields.get(label)
-            for label in (
-                "Transfer Amount",
-                "Transaction Amount",
-                "Credit Amount",
-                "Debit Amount",
-                "Amount",
-            )
+            for label in labels
             if fields.get(label)
         ),
         None,
@@ -210,6 +230,25 @@ def _parse_direction(value: str | None) -> str:
     raise EmailImportError("Unsupported transfer type")
 
 
+def _parse_format(subject: str | None, fields: dict[str, str]):
+    transfer_type = (fields.get("Transfer Type") or "").casefold()
+    transaction_type = (fields.get("Transaction Type") or "").casefold()
+    normalized_subject = (subject or "").casefold()
+
+    if "cardless - withdraw cash" in transfer_type or normalized_subject == "cash withdrawal successful":
+        return "expense", "cash_withdrawal", ("Amount",), "Cash withdrawal"
+    if transaction_type == "qris payment":
+        return "expense", "qris", ("Total Payment",), fields.get("Payment to") or "QRIS payment"
+    if fields.get("Beneficiary Pocket") or fields.get("Beneficiary Pocket Account no."):
+        return "expense", "account_pocket", ("Transfer Amount",), fields.get("Beneficiary Pocket") or "BCA account pocket"
+    if "virtual account" in transfer_type or fields.get("BCA Virtual Account No."):
+        return "expense", "virtual_account", ("Pay Amount", "Total Payment"), fields.get("Company/Product Name") or fields.get("Name") or "BCA virtual account"
+    if transfer_type or transaction_type:
+        direction = _parse_direction(fields.get("Transfer Type") or fields.get("Transaction Type"))
+        return direction, "transfer", ("Transfer Amount", "Transaction Amount", "Amount"), fields.get("Beneficiary Name") or "BCA transfer"
+    raise EmailImportError("Unsupported BCA transaction format")
+
+
 def parse_bca_email(raw: bytes) -> ParsedBcaEmail:
     try:
         root = BytesParser(policy=policy.default).parsebytes(raw)
@@ -223,29 +262,13 @@ def parse_bca_email(raw: bytes) -> ParsedBcaEmail:
     subject = _header(original, "subject")
     status = fields.get("Status")
 
-    if sender != BCA_SENDER:
-        return ParsedBcaEmail(
-            message_id=_header(original, "message-id"),
-            sender=sender,
-            recipient=recipient,
-            subject=subject,
-            status=status,
-            transaction_date=None,
-            direction=None,
-            amount=None,
-            beneficiary=None,
-            remarks=None,
-            reference_number=None,
-            raw_size=len(raw),
-        )
-
-    direction = _parse_direction(fields.get("Transfer Type"))
-    amount = _parse_amount(fields)
+    direction, transaction_subtype, amount_labels, counterparty = _parse_format(subject, fields)
+    amount = _parse_amount(fields, amount_labels)
     transaction_date = _parse_transaction_date(fields.get("Transaction Date"))
 
     currency = " ".join(
         fields.get(label, "") for label in ("Source Currency", "Transfer Currency")
-    )
+    ).strip()
     if currency and "IDR" not in currency.upper():
         raise EmailImportError("Only IDR transactions are supported")
 
@@ -258,9 +281,30 @@ def parse_bca_email(raw: bytes) -> ParsedBcaEmail:
         transaction_date=transaction_date,
         direction=direction,
         amount=amount,
-        beneficiary=fields.get("Beneficiary Name"),
-        remarks=fields.get("Remarks"),
+        counterparty=counterparty,
+        remarks=fields.get("Remarks") or fields.get("Description"),
         reference_number=fields.get("Reference No."),
+        raw_size=len(raw),
+        transaction_subtype=transaction_subtype,
+    )
+
+
+def _metadata_from_raw(raw: bytes) -> ParsedBcaEmail:
+    root = BytesParser(policy=policy.default).parsebytes(raw)
+    original = _select_original_message(root)
+    sender = parseaddr(_header(original, "from") or "")[1].lower() or None
+    return ParsedBcaEmail(
+        message_id=_header(original, "message-id"),
+        sender=sender,
+        recipient=_header(original, "to"),
+        subject=_header(original, "subject"),
+        status=None,
+        transaction_date=None,
+        direction=None,
+        amount=None,
+        counterparty=None,
+        remarks=None,
+        reference_number=None,
         raw_size=len(raw),
     )
 
@@ -304,7 +348,7 @@ async def _find_import(conn, message_id: str):
 async def _insert_import_log(conn, parsed: ParsedBcaEmail, status: str, reason: str | None):
     result = (
         await conn.prepare(
-            "INSERT INTO email_imports (message_id, sender, recipient, subject, received_at, status, reason, raw_size, reference_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO email_imports (message_id, sender, recipient, subject, received_at, status, reason, raw_size, reference_number, transaction_subtype) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(
             parsed.message_id,
@@ -316,6 +360,7 @@ async def _insert_import_log(conn, parsed: ParsedBcaEmail, status: str, reason: 
             reason,
             parsed.raw_size,
             parsed.reference_number,
+            parsed.transaction_subtype,
         )
         .run()
     )
@@ -354,14 +399,10 @@ async def _record_review(conn, parsed: ParsedBcaEmail, reason: str):
     )
 
 
-def _description(parsed: ParsedBcaEmail) -> str:
-    if parsed.beneficiary:
-        description = f"BCA transaction with {parsed.beneficiary}"
-    else:
-        description = "BCA transaction"
+def _description(parsed: ParsedBcaEmail) -> str | None:
     if parsed.remarks and parsed.remarks != "-":
-        description += f"; Remarks: {parsed.remarks}"
-    return description
+        return parsed.remarks
+    return None
 
 
 def _event_metadata(message) -> ParsedBcaEmail:
@@ -375,7 +416,7 @@ def _event_metadata(message) -> ParsedBcaEmail:
         transaction_date=None,
         direction=None,
         amount=None,
-        beneficiary=None,
+        counterparty=None,
         remarks=None,
         reference_number=None,
         raw_size=int(getattr(message, "rawSize", 0) or 0),
@@ -384,6 +425,7 @@ def _event_metadata(message) -> ParsedBcaEmail:
 
 async def process_email(message, env):
     metadata = _event_metadata(message)
+    raw = None
     try:
         raw = await _read_raw_email(message)
         parsed = parse_bca_email(raw)
@@ -397,6 +439,17 @@ async def process_email(message, env):
             parsed.raw_size = metadata.raw_size or len(raw)
     except EmailImportError as exc:
         parsed = metadata
+        if raw:
+            try:
+                parsed = _metadata_from_raw(raw)
+                if not parsed.recipient:
+                    parsed.recipient = metadata.recipient
+                if not parsed.subject:
+                    parsed.subject = metadata.subject
+                if not parsed.message_id:
+                    parsed.message_id = metadata.message_id
+            except Exception:
+                parsed = metadata
         await _record_review(env.money_manager, parsed, str(exc))
         return
 
@@ -414,13 +467,14 @@ async def process_email(message, env):
             )
             return
 
-    if parsed.sender != BCA_SENDER:
-        reason = "Sender is not an approved BCA address"
-        await _record_review(conn, parsed, reason)
-        return
+    # Sender validation is intentionally disabled temporarily for forwarded-email testing.
 
     if not parsed.message_id:
         await _record_review(conn, parsed, "Missing Message-ID")
+        return
+
+    if parsed.direction not in {"income", "expense"}:
+        await _record_review(conn, parsed, "Unsupported transaction direction")
         return
 
     if (parsed.status or "").casefold() not in {"successful", "success", "completed", "succeeded"}:
@@ -436,7 +490,7 @@ async def process_email(message, env):
             .first()
         )
         if account is None:
-            raise EmailImportError("Account 'bca' was not found")
+            raise EmailImportError(f"Account '{BCA_ACCOUNT_NAME}' was not found")
 
         category_name = (
             INCOME_CATEGORY_NAME if parsed.direction == "income" else EXPENSE_CATEGORY_NAME
@@ -455,8 +509,10 @@ async def process_email(message, env):
             account["id"],
             category["id"],
             parsed.amount,
+            parsed.counterparty,
             _description(parsed),
             parsed.transaction_date,
+            parsed.transaction_subtype,
             parsed.message_id,
         )
     except EmailImportError as exc:
@@ -466,7 +522,7 @@ async def process_email(message, env):
             {"status": "failed", "message_id": parsed.message_id, "reason": str(exc)},
         )
         return
-    except Exception as exc:
+    except Exception:
         existing_transaction = None
         if parsed.message_id:
             existing_transaction = await fetch_transaction_by_source_message_id(

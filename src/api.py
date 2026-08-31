@@ -217,11 +217,12 @@ async def create_transaction(payload: TransactionCreate, request: Request):
         related_account_id = payload.related_account_id
 
     occurred_at = _normalize_occurred_at(payload.occurred_at)
+    counterparty = payload.counterparty if payload.counterparty != "" else None
     description = payload.description if payload.description != "" else None
 
     result = (
         await conn.prepare(
-            "INSERT INTO transactions (type, account_id, category_id, related_account_id, amount, description, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO transactions (type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(
             payload.type,
@@ -229,6 +230,7 @@ async def create_transaction(payload: TransactionCreate, request: Request):
             category_id,
             related_account_id,
             payload.amount,
+            counterparty,
             description,
             occurred_at,
         )
@@ -250,16 +252,18 @@ async def create_transfer(payload: TransactionCreate, request: Request):
         raise HTTPException(status_code=404, detail="Account not found")
 
     occurred_at = _normalize_occurred_at(payload.occurred_at)
+    counterparty = payload.counterparty if payload.counterparty != "" else None
     description = payload.description if payload.description != "" else None
     result = (
         await conn.prepare(
-            "INSERT INTO transactions (type, account_id, category_id, related_account_id, amount, description, occurred_at) VALUES (?, ?, NULL, ?, ?, ?, ?)"
+            "INSERT INTO transactions (type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)"
         )
         .bind(
             "transfer",
             payload.account_id,
             payload.related_account_id,
             payload.amount,
+            counterparty,
             description,
             occurred_at,
         )
@@ -311,6 +315,11 @@ async def update_transaction(transaction_id: int, payload: TransactionUpdate, re
     description = (
         payload.description if "description" in payload.model_fields_set else existing["description"]
     )
+    counterparty = (
+        payload.counterparty if "counterparty" in payload.model_fields_set else existing["counterparty"]
+    )
+    if counterparty == "":
+        counterparty = None
     occurred_at = (
         _normalize_occurred_at(payload.occurred_at)
         if "occurred_at" in payload.model_fields_set
@@ -343,8 +352,8 @@ async def update_transaction(transaction_id: int, payload: TransactionUpdate, re
             raise HTTPException(status_code=400, detail="Transfer transactions require a destination account")
 
     await (
-        conn.prepare("UPDATE transactions SET amount = ?, category_id = ?, description = ?, occurred_at = ? WHERE id = ?")
-        .bind(amount, category_id, description, occurred_at, transaction_id)
+        conn.prepare("UPDATE transactions SET amount = ?, category_id = ?, counterparty = ?, description = ?, occurred_at = ? WHERE id = ?")
+        .bind(amount, category_id, counterparty, description, occurred_at, transaction_id)
         .run()
     )
     return await fetch_transaction(conn, transaction_id)

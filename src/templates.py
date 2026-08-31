@@ -314,16 +314,18 @@ TEMPLATES = {
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
   <table>
-    <thead><tr><th>Type</th><th>Account</th><th>Category</th><th>Related</th><th>Amount</th><th>Occurred</th><th></th></tr></thead>
+    <thead><tr><th>Type</th><th>Source</th><th>Account</th><th>Counterparty</th><th>Category</th><th>Related</th><th>Amount</th><th>Occurred</th><th></th></tr></thead>
     <tbody>
       {% for transaction in transactions %}
       <tr>
         <td>{{ transaction.type }}</td>
+        <td>{% if transaction.transaction_subtype %}{{ transaction.transaction_subtype }}{% else %}<span class="muted">-</span>{% endif %}</td>
         <td>
           {% for account in accounts %}
             {% if account.id == transaction.account_id %}{{ account.name }}{% endif %}
           {% endfor %}
         </td>
+        <td>{% if transaction.counterparty %}{{ transaction.counterparty }}{% else %}<span class="muted">-</span>{% endif %}</td>
         <td>
           {% if transaction.category_id %}
             {% for category in categories %}
@@ -348,7 +350,7 @@ TEMPLATES = {
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="7">No transactions yet.</td></tr>
+      <tr><td colspan="9">No transactions yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -387,6 +389,7 @@ TEMPLATES = {
           {% endfor %}
         </select>
       </label>
+      <label>Counterparty<input type="text" name="counterparty" value="{{ form.counterparty }}"></label>
       <label>Amount (minor units)<input type="number" name="amount" min="1" value="{{ form.amount }}" required></label>
       <label>Description<input type="text" name="description" value="{{ form.description }}"></label>
       <label>Occurred at<input type="text" name="occurred_at" value="{{ form.occurred_at }}" placeholder="2026-08-13T12:34:56Z"></label>
@@ -436,6 +439,7 @@ TEMPLATES = {
           {% endif %}
         </select>
       </label>
+      <label>Counterparty<input type="text" name="counterparty" value="{{ transaction.counterparty or '' }}"></label>
       <label>Amount (minor units)<input type="number" name="amount" min="1" value="{{ transaction.amount }}" required></label>
       <label>Description<input type="text" name="description" value="{{ transaction.description or '' }}"></label>
       <label>Occurred at<input type="text" name="occurred_at" value="{{ transaction.occurred_at }}"></label>

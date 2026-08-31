@@ -50,8 +50,10 @@ CREATE TABLE IF NOT EXISTS transactions (
     related_account_id INTEGER REFERENCES accounts(id),
     amount INTEGER NOT NULL,
     description TEXT,
+    counterparty TEXT,
     occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    transaction_subtype TEXT,
     source_message_id TEXT
 );
 
@@ -70,5 +72,6 @@ CREATE TABLE IF NOT EXISTS email_imports (
     reason TEXT,
     raw_size INTEGER,
     transaction_id INTEGER REFERENCES transactions(id) ON DELETE SET NULL,
-    reference_number TEXT
+    reference_number TEXT,
+    transaction_subtype TEXT
 );

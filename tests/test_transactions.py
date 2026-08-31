@@ -141,6 +141,29 @@ def test_ac2_create_expense_transaction_returns_201(dev_server):
     assert isinstance(body["id"], int)
 
 
+def test_transaction_counterparty_can_be_created_and_updated(dev_server):
+    port = dev_server
+    account = create_account(port, "Counterparty Account")
+    category = create_category(port, "Counterparty Category")
+
+    created = create_expense_transaction(
+        port,
+        account["id"],
+        category["id"],
+        counterparty="Grocery Store",
+    )
+    assert created.status_code == 201
+    transaction = created.json()
+    assert transaction["counterparty"] == "Grocery Store"
+
+    updated = requests.patch(
+        f"http://localhost:{port}/transactions/{transaction['id']}",
+        json={"counterparty": "Buying dinner"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["counterparty"] == "Buying dinner"
+
+
 def test_ac3_unknown_account_is_rejected_without_insert(dev_server):
     port = dev_server
     account = create_account(port, "AC3 Cash")

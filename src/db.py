@@ -52,7 +52,7 @@ async def category_name_taken(conn, name: str, exclude_id: Optional[int] = None)
 async def fetch_transaction(conn, transaction_id: int):
     row = (
         await conn.prepare(
-            "SELECT id, type, account_id, category_id, related_account_id, amount, description, occurred_at, created_at FROM transactions WHERE id = ?"
+            "SELECT id, type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at, created_at, transaction_subtype FROM transactions WHERE id = ?"
         )
         .bind(transaction_id)
         .first()
@@ -66,21 +66,25 @@ async def insert_transaction(
     account_id: int,
     category_id: Optional[int],
     amount: int,
+    counterparty: Optional[str],
     description: Optional[str],
     occurred_at: str,
+    transaction_subtype: Optional[str] = None,
     source_message_id: Optional[str] = None,
 ):
     result = (
         await conn.prepare(
-            "INSERT INTO transactions (type, account_id, category_id, related_account_id, amount, description, occurred_at, source_message_id) VALUES (?, ?, ?, NULL, ?, ?, ?, ?)"
+            "INSERT INTO transactions (type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at, transaction_subtype, source_message_id) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)"
         )
         .bind(
             type_,
             account_id,
             category_id,
             amount,
+            counterparty,
             description,
             occurred_at,
+            transaction_subtype,
             source_message_id,
         )
         .run()
@@ -91,7 +95,7 @@ async def insert_transaction(
 async def fetch_transaction_by_source_message_id(conn, source_message_id: str):
     return (
         await conn.prepare(
-            "SELECT id, type, account_id, category_id, related_account_id, amount, description, occurred_at, created_at FROM transactions WHERE source_message_id = ?"
+            "SELECT id, type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at, created_at, transaction_subtype FROM transactions WHERE source_message_id = ?"
         )
         .bind(source_message_id)
         .first()
@@ -146,7 +150,7 @@ async def list_transactions(
     to: Optional[str] = None,
 ):
     sql = (
-        "SELECT id, type, account_id, category_id, related_account_id, amount, description, occurred_at, created_at FROM transactions"
+        "SELECT id, type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at, created_at, transaction_subtype FROM transactions"
     )
     clauses = []
     params = []
@@ -236,6 +240,6 @@ async def expenses_by_category(conn, from_: Optional[str] = None, to: Optional[s
 
 async def recent_transactions(conn, limit: int = 5):
     result = await conn.prepare(
-        "SELECT id, type, account_id, category_id, related_account_id, amount, description, occurred_at, created_at FROM transactions ORDER BY occurred_at DESC, id DESC LIMIT ?"
+        "SELECT id, type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at, created_at, transaction_subtype FROM transactions ORDER BY occurred_at DESC, id DESC LIMIT ?"
     ).bind(limit).all()
     return result.results

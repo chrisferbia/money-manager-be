@@ -11,4 +11,4 @@ class Default(WorkerEntrypoint):
         return await asgi.fetch(app, request.js_object, self.env)
 
     async def email(self, message, env=None, ctx=None):
-        await process_email(message, env or self.env)
+        await process_email(message, self.env)
