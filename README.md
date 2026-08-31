@@ -12,14 +12,26 @@ https://docs.astral.sh/uv/getting-started/installation/#standalone-installer
 Now, if you run `uv run pywrangler dev` within this directory, it should use the config
 in `wrangler.jsonc` to run the example.
 
-You can also run `uv run pywrangler deploy` to deploy the example.
+Manual deploy: `uv run pywrangler deploy`
 
-to run sql file
 uv run pywrangler d1 execute money-manager --remote --file db_init.sql
 
+## Test
 Run Worker tests explicitly:
 pytest -m worker
 pytest -m "unit or integration or worker"
 
 Test coverage
 pytest --cov=src --cov-report=term-missing
+
+## Cloudflare
+Check current local Cloudflare authentication account
+npx wrangler whoami
+
+## Email Worker
+
+The Worker logs incoming email metadata (sender, recipient, subject, message
+ID, date, and size) to the Worker console. Configure Cloudflare Email Routing
+to send an address on your domain to the `money-manager-be` Worker.
+
+

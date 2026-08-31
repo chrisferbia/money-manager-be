@@ -1,6 +1,7 @@
 from workers import WorkerEntrypoint
 
 from app import app
+from email_import import process_email
 
 
 class Default(WorkerEntrypoint):
@@ -9,16 +10,5 @@ class Default(WorkerEntrypoint):
 
         return await asgi.fetch(app, request.js_object, self.env)
 
-    async def email(self, message):
-        headers = message.headers
-        print(
-            "Incoming email:",
-            {
-                "from": getattr(message, "from", None),
-                "to": getattr(message, "to", None),
-                "subject": headers.get("subject"),
-                "message_id": headers.get("message-id"),
-                "date": headers.get("date"),
-                "raw_size": getattr(message, "rawSize", None),
-            },
-        )
+    async def email(self, message, env=None, ctx=None):
+        await process_email(message, env or self.env)

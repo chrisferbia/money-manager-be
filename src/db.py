@@ -60,6 +60,44 @@ async def fetch_transaction(conn, transaction_id: int):
     return row
 
 
+async def insert_transaction(
+    conn,
+    type_: str,
+    account_id: int,
+    category_id: Optional[int],
+    amount: int,
+    description: Optional[str],
+    occurred_at: str,
+    source_message_id: Optional[str] = None,
+):
+    result = (
+        await conn.prepare(
+            "INSERT INTO transactions (type, account_id, category_id, related_account_id, amount, description, occurred_at, source_message_id) VALUES (?, ?, ?, NULL, ?, ?, ?, ?)"
+        )
+        .bind(
+            type_,
+            account_id,
+            category_id,
+            amount,
+            description,
+            occurred_at,
+            source_message_id,
+        )
+        .run()
+    )
+    return result.meta.last_row_id
+
+
+async def fetch_transaction_by_source_message_id(conn, source_message_id: str):
+    return (
+        await conn.prepare(
+            "SELECT id, type, account_id, category_id, related_account_id, amount, description, occurred_at, created_at FROM transactions WHERE source_message_id = ?"
+        )
+        .bind(source_message_id)
+        .first()
+    )
+
+
 async def account_exists(conn, account_id: int) -> bool:
     row = await conn.prepare("SELECT id FROM accounts WHERE id = ?").bind(account_id).first()
     return row is not None
