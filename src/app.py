@@ -9,9 +9,9 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://money-manager-fe.azamines.workers.dev",
         "http://localhost:5173",
     ],
+    allow_origin_regex=r"^https://(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+azamines\.workers\.dev$",
     allow_methods=["*"],
     allow_headers=["*"],
 )
