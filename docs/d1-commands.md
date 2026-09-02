@@ -1,6 +1,13 @@
 # Cloudflare D1 Commands
 
-The D1 database used by this project is `money-manager`.
+This project has two D1 databases:
+
+- `money-manager` is used by the default environment and `money-manager-be`.
+- `private-money-manager` is used by the `private` environment and
+  `private-money-manager-be`.
+
+The `money_manager` binding name is the same in application code; Wrangler maps it to
+the database configured for the selected environment.
 
 ## Authentication
 
@@ -47,6 +54,9 @@ npx wrangler d1 execute money-manager --remote --command "PRAGMA table_info(tran
 ```
 
 ## Migrations
+
+npx wrangler d1 execute private-money-manager --remote --file db_init.sql
+npx wrangler d1 execute money-manager --remote --file db_init.sql
 
 Create a migration:
 

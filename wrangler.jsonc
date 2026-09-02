@@ -16,5 +16,17 @@
 			"database_name": "money-manager",
 			"database_id": "7bdd4d22-65d9-4ec8-8652-fdbb3833e9a0"
 		}
-	]
+	],
+	"env": {
+		"private": {
+			"name": "private-money-manager-be",
+			"d1_databases": [
+				{
+					"binding": "money_manager",
+					"database_name": "private-money-manager",
+					"database_id": "d2876a03-f5e5-4a83-a03a-855784650ab8"
+				}
+			]
+		}
+	}
 }
