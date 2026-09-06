@@ -50,6 +50,8 @@ class TransactionCreate(BaseModel):
 class TransactionUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    type: Optional[Literal["income", "expense", "transfer"]] = None
+    related_account_id: Optional[int] = None
     amount: Optional[int] = Field(default=None, gt=0)
     category_id: Optional[int] = None
     counterparty: Optional[str] = None

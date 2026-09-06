@@ -292,11 +292,13 @@ def test_ac5_get_transaction_by_id_and_404(dev_server):
     assert missing.status_code == 404
 
 
-def test_ac6_patch_updates_allowed_fields_and_rejects_type_or_account_changes(dev_server):
+def test_ac6_patch_updates_fields_and_can_change_transaction_type(dev_server):
     port = dev_server
     account = create_account(port, "AC6 Cash")
     category = create_category(port, "AC6 Food")
     other_category = create_category(port, "AC6 Transport")
+    income_category = create_category(port, "AC6 Salary", type_="income")
+    destination = create_account(port, "AC6 Destination")
     created = create_expense_transaction(port, account["id"], category["id"]).json()
 
     updated = requests.patch(
@@ -313,11 +315,36 @@ def test_ac6_patch_updates_allowed_fields_and_rejects_type_or_account_changes(de
     assert updated.json()["category_id"] == other_category["id"]
     assert updated.json()["description"] == "Updated"
 
-    reject_type = requests.patch(
+    changed_to_income = requests.patch(
         f"http://localhost:{port}/transactions/{created['id']}",
-        json={"type": "income"},
+        json={"type": "income", "category_id": income_category["id"]},
     )
-    assert 400 <= reject_type.status_code < 500
+    assert changed_to_income.status_code == 200
+    assert changed_to_income.json()["type"] == "income"
+    assert changed_to_income.json()["category_id"] == income_category["id"]
+    assert changed_to_income.json()["related_account_id"] is None
+
+    changed_to_transfer = requests.patch(
+        f"http://localhost:{port}/transactions/{created['id']}",
+        json={
+            "type": "transfer",
+            "category_id": None,
+            "related_account_id": destination["id"],
+        },
+    )
+    assert changed_to_transfer.status_code == 200
+    assert changed_to_transfer.json()["type"] == "transfer"
+    assert changed_to_transfer.json()["category_id"] is None
+    assert changed_to_transfer.json()["related_account_id"] == destination["id"]
+
+    changed_to_expense = requests.patch(
+        f"http://localhost:{port}/transactions/{created['id']}",
+        json={"type": "expense", "category_id": category["id"], "related_account_id": None},
+    )
+    assert changed_to_expense.status_code == 200
+    assert changed_to_expense.json()["type"] == "expense"
+    assert changed_to_expense.json()["category_id"] == category["id"]
+    assert changed_to_expense.json()["related_account_id"] is None
 
     reject_account = requests.patch(
         f"http://localhost:{port}/transactions/{created['id']}",

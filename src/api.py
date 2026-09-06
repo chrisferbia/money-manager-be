@@ -308,9 +308,14 @@ async def update_transaction(transaction_id: int, payload: TransactionUpdate, re
     if existing is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-    if existing["type"] == "transfer" and "category_id" in payload.model_fields_set:
-        raise HTTPException(status_code=400, detail="Transfer transactions cannot have a category")
-
+    transaction_type = (
+        payload.type if "type" in payload.model_fields_set else existing["type"]
+    )
+    related_account_id = (
+        payload.related_account_id
+        if "related_account_id" in payload.model_fields_set
+        else existing["related_account_id"]
+    )
     amount = payload.amount if payload.amount is not None else existing["amount"]
     description = (
         payload.description if "description" in payload.model_fields_set else existing["description"]
@@ -326,34 +331,48 @@ async def update_transaction(transaction_id: int, payload: TransactionUpdate, re
         else existing["occurred_at"]
     )
 
-    if existing["type"] == "income":
-        category_id = payload.category_id if "category_id" in payload.model_fields_set else existing["category_id"]
+    if transaction_type == "transfer":
+        if "category_id" in payload.model_fields_set and payload.category_id is not None:
+            raise HTTPException(status_code=400, detail="Transfer transactions cannot have a category")
+        if related_account_id is None:
+            raise HTTPException(status_code=400, detail="Transfer transactions require a destination account")
+        if related_account_id == existing["account_id"]:
+            raise HTTPException(status_code=400, detail="Transfer accounts must differ")
+        if not await account_exists(conn, related_account_id):
+            raise HTTPException(status_code=404, detail="Account not found")
+        category_id = None
+    else:
+        if "related_account_id" in payload.model_fields_set and payload.related_account_id is not None:
+            raise HTTPException(status_code=400, detail="Only transfer transactions can have a destination account")
+        related_account_id = None
+        if "category_id" in payload.model_fields_set:
+            category_id = payload.category_id
+        elif transaction_type != existing["type"]:
+            category_id = None
+        else:
+            category_id = existing["category_id"]
+        if transaction_type == "expense" and category_id is None:
+            raise HTTPException(status_code=400, detail="Expense transactions require a category")
         if category_id is not None:
             if not await category_exists(conn, category_id):
                 raise HTTPException(status_code=404, detail="Category not found")
-            if not await category_matches_type(conn, category_id, "income"):
+            if not await category_matches_type(conn, category_id, transaction_type):
                 raise HTTPException(status_code=400, detail="Category type must match transaction type")
-    elif existing["type"] == "expense":
-        if "category_id" in payload.model_fields_set:
-            if payload.category_id is None:
-                raise HTTPException(status_code=400, detail="Expense transactions require a category")
-            category_id = payload.category_id
-        else:
-            category_id = existing["category_id"]
-        if category_id is None:
-            raise HTTPException(status_code=400, detail="Expense transactions require a category")
-        if not await category_exists(conn, category_id):
-            raise HTTPException(status_code=404, detail="Category not found")
-        if not await category_matches_type(conn, category_id, "expense"):
-            raise HTTPException(status_code=400, detail="Category type must match transaction type")
-    else:
-        category_id = None
-        if existing["related_account_id"] is None:
-            raise HTTPException(status_code=400, detail="Transfer transactions require a destination account")
 
     await (
-        conn.prepare("UPDATE transactions SET amount = ?, category_id = ?, counterparty = ?, description = ?, occurred_at = ? WHERE id = ?")
-        .bind(amount, category_id, counterparty, description, occurred_at, transaction_id)
+        conn.prepare(
+            "UPDATE transactions SET type = ?, category_id = ?, related_account_id = ?, amount = ?, counterparty = ?, description = ?, occurred_at = ? WHERE id = ?"
+        )
+        .bind(
+            transaction_type,
+            category_id,
+            related_account_id,
+            amount,
+            counterparty,
+            description,
+            occurred_at,
+            transaction_id,
+        )
         .run()
     )
     return await fetch_transaction(conn, transaction_id)
