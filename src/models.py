@@ -6,33 +6,39 @@ from pydantic import BaseModel, ConfigDict, Field
 class AccountCreate(BaseModel):
     name: str = Field(min_length=1)
     type: str = Field(min_length=1)
+    sequence: Optional[int] = Field(default=None, ge=1)
 
 
 class AccountUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1)
     type: Optional[str] = Field(default=None, min_length=1)
+    sequence: Optional[int] = Field(default=None, ge=1)
 
 
 class Account(BaseModel):
     id: int
     name: str
     type: str
+    sequence: int
     created_at: str
 
 
 class CategoryCreate(BaseModel):
     name: str = Field(min_length=1)
     type: Literal["income", "expense"] = "expense"
+    sequence: Optional[int] = Field(default=None, ge=1)
 
 
 class CategoryUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1)
+    sequence: Optional[int] = Field(default=None, ge=1)
 
 
 class Category(BaseModel):
     id: int
     name: str
     type: Literal["income", "expense"] = "expense"
+    sequence: int
     created_at: str
 
 

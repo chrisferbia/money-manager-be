@@ -143,10 +143,11 @@ async def ui_update_account(account_id: int, request: Request):
     form = await request.form()
     name = (form.get("name") or "").strip()
     type_ = form.get("type") or ""
+    sequence = form.get("sequence") or None
 
     error = None
     try:
-        payload = AccountUpdate(name=name, type=type_)
+        payload = AccountUpdate(name=name, type=type_, sequence=sequence)
         await update_account(account_id, payload, request)
     except ValidationError:
         error = "Name and type are required"
@@ -157,7 +158,13 @@ async def ui_update_account(account_id: int, request: Request):
     else:
         return RedirectResponse("/ui/accounts", status_code=303)
 
-    account = {"id": account_id, "name": name, "type": type_, "created_at": ""}
+    account = {
+        "id": account_id,
+        "name": name,
+        "type": type_,
+        "sequence": sequence or "",
+        "created_at": "",
+    }
     return jinja_env.get_template("account_edit.html").render(
         account=account, error=error
     )
@@ -179,7 +186,9 @@ async def ui_delete_account(account_id: int, request: Request):
 @router.get("/ui/categories", response_class=HTMLResponse)
 async def ui_list_categories(request: Request):
     conn = db(request)
-    result = await conn.prepare("SELECT id, name, type, created_at FROM categories ORDER BY id").all()
+    result = await conn.prepare(
+        "SELECT id, name, type, sequence, created_at FROM categories ORDER BY sequence, id"
+    ).all()
     return jinja_env.get_template("categories_list.html").render(
         categories=result.results, error=None, form_name="", form_type="expense"
     )
@@ -203,7 +212,9 @@ async def ui_create_category(request: Request):
         return RedirectResponse("/ui/categories", status_code=303)
 
     conn = db(request)
-    result = await conn.prepare("SELECT id, name, type, created_at FROM categories ORDER BY id").all()
+    result = await conn.prepare(
+        "SELECT id, name, type, sequence, created_at FROM categories ORDER BY sequence, id"
+    ).all()
     return jinja_env.get_template("categories_list.html").render(
         categories=result.results, error=error, form_name=name, form_type=type_
     )
@@ -222,10 +233,11 @@ async def ui_edit_category_form(category_id: int, request: Request):
 async def ui_update_category(category_id: int, request: Request):
     form = await request.form()
     name = (form.get("name") or "").strip()
+    sequence = form.get("sequence") or None
 
     error = None
     try:
-        payload = CategoryUpdate(name=name)
+        payload = CategoryUpdate(name=name, sequence=sequence)
         await update_category(category_id, payload, request)
     except ValidationError:
         error = "Name is required"
@@ -236,7 +248,12 @@ async def ui_update_category(category_id: int, request: Request):
     else:
         return RedirectResponse("/ui/categories", status_code=303)
 
-    category = {"id": category_id, "name": name, "created_at": ""}
+    category = {
+        "id": category_id,
+        "name": name,
+        "sequence": sequence or "",
+        "created_at": "",
+    }
     return jinja_env.get_template("category_edit.html").render(category=category, error=error)
 
 
@@ -247,7 +264,7 @@ async def ui_delete_category(category_id: int, request: Request):
     except HTTPException as exc:
         conn = db(request)
         result = await conn.prepare(
-            "SELECT id, name, type, created_at FROM categories ORDER BY id"
+            "SELECT id, name, type, sequence, created_at FROM categories ORDER BY sequence, id"
         ).all()
         return jinja_env.get_template("categories_list.html").render(
             categories=result.results, error=exc.detail, form_name="", form_type="expense"
@@ -259,8 +276,10 @@ async def ui_delete_category(category_id: int, request: Request):
 async def ui_list_transactions(request: Request):
     conn = db(request)
     transactions = await list_transactions(conn)
-    accounts = await conn.prepare("SELECT id, name FROM accounts ORDER BY id").all()
-    categories = await conn.prepare("SELECT id, name, type FROM categories ORDER BY id").all()
+    accounts = await conn.prepare("SELECT id, name FROM accounts ORDER BY sequence, id").all()
+    categories = await conn.prepare(
+        "SELECT id, name, type FROM categories ORDER BY sequence, id"
+    ).all()
     return jinja_env.get_template("transactions_list.html").render(
         transactions=transactions,
         accounts=accounts.results,
@@ -316,8 +335,10 @@ async def ui_create_transaction(request: Request):
 
     conn = db(request)
     transactions = await list_transactions(conn)
-    accounts = await conn.prepare("SELECT id, name FROM accounts ORDER BY id").all()
-    categories = await conn.prepare("SELECT id, name, type FROM categories ORDER BY id").all()
+    accounts = await conn.prepare("SELECT id, name FROM accounts ORDER BY sequence, id").all()
+    categories = await conn.prepare(
+        "SELECT id, name, type FROM categories ORDER BY sequence, id"
+    ).all()
     return jinja_env.get_template("transactions_list.html").render(
         transactions=transactions,
         accounts=accounts.results,
@@ -342,8 +363,10 @@ async def ui_edit_transaction_form(transaction_id: int, request: Request):
     transaction = await fetch_transaction(conn, transaction_id)
     if transaction is None:
         return RedirectResponse("/ui/transactions", status_code=303)
-    accounts = await conn.prepare("SELECT id, name FROM accounts ORDER BY id").all()
-    categories = await conn.prepare("SELECT id, name, type FROM categories ORDER BY id").all()
+    accounts = await conn.prepare("SELECT id, name FROM accounts ORDER BY sequence, id").all()
+    categories = await conn.prepare(
+        "SELECT id, name, type FROM categories ORDER BY sequence, id"
+    ).all()
     return jinja_env.get_template("transaction_edit.html").render(
         transaction=transaction,
         accounts=accounts.results,
@@ -384,8 +407,10 @@ async def ui_update_transaction(transaction_id: int, request: Request):
     transaction = await fetch_transaction(conn, transaction_id)
     if transaction is None:
         return RedirectResponse("/ui/transactions", status_code=303)
-    accounts = await conn.prepare("SELECT id, name FROM accounts ORDER BY id").all()
-    categories = await conn.prepare("SELECT id, name, type FROM categories ORDER BY id").all()
+    accounts = await conn.prepare("SELECT id, name FROM accounts ORDER BY sequence, id").all()
+    categories = await conn.prepare(
+        "SELECT id, name, type FROM categories ORDER BY sequence, id"
+    ).all()
     return jinja_env.get_template("transaction_edit.html").render(
         transaction={
             **transaction,

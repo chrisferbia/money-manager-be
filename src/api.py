@@ -15,6 +15,8 @@ from db import (
     fetch_category,
     fetch_transaction,
     list_transactions,
+    next_sequence,
+    reorder,
     transaction_references_account,
     transaction_references_category,
 )
@@ -59,17 +61,21 @@ async def create_account(payload: AccountCreate, request: Request):
         raise HTTPException(status_code=409, detail="Account name already exists")
 
     result = (
-        await conn.prepare("INSERT INTO accounts (name, type) VALUES (?, ?)")
-        .bind(payload.name, payload.type)
+        await conn.prepare("INSERT INTO accounts (name, type, sequence) VALUES (?, ?, ?)")
+        .bind(payload.name, payload.type, await next_sequence(conn, "accounts"))
         .run()
     )
+    if payload.sequence is not None:
+        await reorder(conn, "accounts", result.meta.last_row_id, payload.sequence)
     return await fetch_account(conn, result.meta.last_row_id)
 
 
 @router.get("/accounts")
 async def list_accounts(request: Request, include_balance: bool = False):
     conn = db(request)
-    result = await conn.prepare("SELECT id, name, type, created_at FROM accounts ORDER BY id").all()
+    result = await conn.prepare(
+        "SELECT id, name, type, sequence, created_at FROM accounts ORDER BY sequence, id"
+    ).all()
     accounts = result.results
     if include_balance:
         return [{**account, "balance": await account_balance(conn, account["id"])} for account in accounts]
@@ -117,6 +123,8 @@ async def update_account(account_id: int, payload: AccountUpdate, request: Reque
         .bind(name, type_, account_id)
         .run()
     )
+    if payload.sequence is not None:
+        await reorder(conn, "accounts", account_id, payload.sequence)
     return await fetch_account(conn, account_id)
 
 
@@ -138,17 +146,23 @@ async def create_category(payload: CategoryCreate, request: Request):
         raise HTTPException(status_code=409, detail="Category name already exists")
 
     result = (
-        await conn.prepare("INSERT INTO categories (name, type) VALUES (?, ?)")
-        .bind(payload.name, payload.type)
+        await conn.prepare(
+            "INSERT INTO categories (name, type, sequence) VALUES (?, ?, ?)"
+        )
+        .bind(payload.name, payload.type, await next_sequence(conn, "categories"))
         .run()
     )
+    if payload.sequence is not None:
+        await reorder(conn, "categories", result.meta.last_row_id, payload.sequence)
     return await fetch_category(conn, result.meta.last_row_id)
 
 
 @router.get("/categories", response_model=list[Category])
 async def list_categories(request: Request):
     conn = db(request)
-    result = await conn.prepare("SELECT id, name, type, created_at FROM categories ORDER BY id").all()
+    result = await conn.prepare(
+        "SELECT id, name, type, sequence, created_at FROM categories ORDER BY sequence, id"
+    ).all()
     return result.results
 
 
@@ -174,6 +188,8 @@ async def update_category(category_id: int, payload: CategoryUpdate, request: Re
         raise HTTPException(status_code=409, detail="Category name already exists")
 
     await conn.prepare("UPDATE categories SET name = ? WHERE id = ?").bind(name, category_id).run()
+    if payload.sequence is not None:
+        await reorder(conn, "categories", category_id, payload.sequence)
     return await fetch_category(conn, category_id)
 
 

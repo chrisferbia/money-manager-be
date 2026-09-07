@@ -53,6 +53,54 @@ def test_ac3_list_accounts_returns_created_accounts(dev_server):
     assert created["id"] in ids
 
 
+def test_ac3_sequence_controls_account_order(dev_server):
+    port = dev_server
+    first = requests.post(
+        f"http://localhost:{port}/accounts",
+        json={"name": "AC3 First", "type": "cash"},
+    ).json()
+    second = requests.post(
+        f"http://localhost:{port}/accounts",
+        json={"name": "AC3 Second", "type": "cash"},
+    ).json()
+    third = requests.post(
+        f"http://localhost:{port}/accounts",
+        json={"name": "AC3 Third", "type": "cash"},
+    ).json()
+
+    moved = requests.patch(
+        f"http://localhost:{port}/accounts/{third['id']}",
+        json={"sequence": 1},
+    )
+    assert moved.status_code == 200
+    assert moved.json()["sequence"] == 1
+
+    listing = requests.get(f"http://localhost:{port}/accounts").json()
+    assert [account["id"] for account in listing] == [third["id"], first["id"], second["id"]]
+    assert [account["sequence"] for account in listing] == [1, 2, 3]
+
+
+def test_ui_account_edit_updates_sequence(dev_server):
+    port = dev_server
+    first = requests.post(
+        f"http://localhost:{port}/accounts",
+        json={"name": "UI First", "type": "cash"},
+    ).json()
+    second = requests.post(
+        f"http://localhost:{port}/accounts",
+        json={"name": "UI Second", "type": "cash"},
+    ).json()
+
+    response = requests.post(
+        f"http://localhost:{port}/ui/accounts/{second['id']}/edit",
+        data={"name": second["name"], "type": second["type"], "sequence": "1"},
+    )
+
+    assert response.status_code == 200
+    listing = requests.get(f"http://localhost:{port}/accounts").json()
+    assert [account["id"] for account in listing] == [second["id"], first["id"]]
+
+
 def test_ac3b_list_accounts_include_balance_returns_balances(dev_server):
     port = dev_server
     cash = requests.post(

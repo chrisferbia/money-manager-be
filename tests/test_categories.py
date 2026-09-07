@@ -63,6 +63,54 @@ def test_ac3_list_categories_returns_created_categories(dev_server):
     assert created["id"] in ids
 
 
+def test_ac3_sequence_controls_category_order(dev_server):
+    port = dev_server
+    first = requests.post(
+        f"http://localhost:{port}/categories",
+        json={"name": "AC3 First"},
+    ).json()
+    second = requests.post(
+        f"http://localhost:{port}/categories",
+        json={"name": "AC3 Second"},
+    ).json()
+    third = requests.post(
+        f"http://localhost:{port}/categories",
+        json={"name": "AC3 Third"},
+    ).json()
+
+    moved = requests.patch(
+        f"http://localhost:{port}/categories/{third['id']}",
+        json={"sequence": 1},
+    )
+    assert moved.status_code == 200
+    assert moved.json()["sequence"] == 1
+
+    listing = requests.get(f"http://localhost:{port}/categories").json()
+    assert [category["id"] for category in listing] == [third["id"], first["id"], second["id"]]
+    assert [category["sequence"] for category in listing] == [1, 2, 3]
+
+
+def test_ui_category_edit_updates_sequence(dev_server):
+    port = dev_server
+    first = requests.post(
+        f"http://localhost:{port}/categories",
+        json={"name": "UI First"},
+    ).json()
+    second = requests.post(
+        f"http://localhost:{port}/categories",
+        json={"name": "UI Second"},
+    ).json()
+
+    response = requests.post(
+        f"http://localhost:{port}/ui/categories/{second['id']}/edit",
+        data={"name": second["name"], "sequence": "1"},
+    )
+
+    assert response.status_code == 200
+    listing = requests.get(f"http://localhost:{port}/categories").json()
+    assert [category["id"] for category in listing] == [second["id"], first["id"]]
+
+
 def test_ac4_get_category_by_id(dev_server):
     port = dev_server
     created = requests.post(

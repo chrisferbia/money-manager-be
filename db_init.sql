@@ -2,45 +2,47 @@ CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     type TEXT NOT NULL,
+    sequence INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-INSERT OR IGNORE INTO accounts (name, type) VALUES
-    ('Cash Wallet', 'cash'),
-    ('Main Checking', 'bank'),
-    ('Emergency Savings', 'savings'),
-    ('Credit Card', 'credit_card'),
-    ('PayPal', 'e_wallet'),
-    ('Investment Portfolio', 'investment'),
-    ('Student Loan', 'loan'),
-    ('Home Mortgage', 'mortgage');
+INSERT OR IGNORE INTO accounts (name, type, sequence) VALUES
+    ('Cash Wallet', 'cash', 1),
+    ('Main Checking', 'bank', 2),
+    ('Emergency Savings', 'savings', 3),
+    ('Credit Card', 'credit_card', 4),
+    ('PayPal', 'e_wallet', 5),
+    ('Investment Portfolio', 'investment', 6),
+    ('Student Loan', 'loan', 7),
+    ('Home Mortgage', 'mortgage', 8);
 
 CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     type TEXT NOT NULL DEFAULT 'expense',
+    sequence INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-INSERT OR IGNORE INTO categories (name, type) VALUES
-    ('Salary', 'income'),
-    ('Freelance', 'income'),
-    ('Business', 'income'),
-    ('Investment', 'income'),
-    ('Gift', 'income'),
-    ('Other Income', 'income'),
-    ('Housing', 'expense'),
-    ('Food', 'expense'),
-    ('Transportation', 'expense'),
-    ('Utilities', 'expense'),
-    ('Healthcare', 'expense'),
-    ('Shopping', 'expense'),
-    ('Entertainment', 'expense'),
-    ('Education', 'expense'),
-    ('Personal Care', 'expense'),
-    ('Debt Payment', 'expense'),
-    ('Fees & Charges', 'expense'),
-    ('Other Expense', 'expense');
+INSERT OR IGNORE INTO categories (name, type, sequence) VALUES
+    ('Salary', 'income', 1),
+    ('Freelance', 'income', 2),
+    ('Business', 'income', 3),
+    ('Investment', 'income', 4),
+    ('Gift', 'income', 5),
+    ('Other Income', 'income', 6),
+    ('Housing', 'expense', 7),
+    ('Food', 'expense', 8),
+    ('Transportation', 'expense', 9),
+    ('Utilities', 'expense', 10),
+    ('Healthcare', 'expense', 11),
+    ('Shopping', 'expense', 12),
+    ('Entertainment', 'expense', 13),
+    ('Education', 'expense', 14),
+    ('Personal Care', 'expense', 15),
+    ('Debt Payment', 'expense', 16),
+    ('Fees & Charges', 'expense', 17),
+    ('Other Expense', 'expense', 18);
 
 CREATE TABLE IF NOT EXISTS transactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

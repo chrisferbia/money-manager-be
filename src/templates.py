@@ -49,11 +49,12 @@ ACCOUNTS_LIST = """
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
    <table>
-    <thead><tr><th>Name</th><th>Type</th><th>Balance</th><th>Created</th><th></th></tr></thead>
+    <thead><tr><th>Order</th><th>Name</th><th>Type</th><th>Balance</th><th>Created</th><th></th></tr></thead>
     <tbody>
       {% for account in accounts %}
       <tr>
-        <td>{{ account.name }}</td>
+         <td>{{ account.sequence }}</td>
+         <td>{{ account.name }}</td>
         <td>{{ account.type }}</td>
         <td>{% if account.balance is defined %}{{ account.balance }}{% else %}<span class="muted">-</span>{% endif %}</td>
         <td>{{ account.created_at }}</td>
@@ -65,7 +66,7 @@ ACCOUNTS_LIST = """
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="5">No accounts yet.</td></tr>
+       <tr><td colspan="6">No accounts yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -104,10 +105,11 @@ CATEGORIES_LIST = """
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
    <table>
-    <thead><tr><th>Name</th><th>Type</th><th>Created</th><th></th></tr></thead>
+    <thead><tr><th>Order</th><th>Name</th><th>Type</th><th>Created</th><th></th></tr></thead>
     <tbody>
       {% for category in categories %}
       <tr>
+       <td>{{ category.sequence }}</td>
        <td>{{ category.name }}</td>
         <td>{{ category.type }}</td>
        <td>{{ category.created_at }}</td>
@@ -119,7 +121,7 @@ CATEGORIES_LIST = """
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="4">No categories yet.</td></tr>
+       <tr><td colspan="5">No categories yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -183,6 +185,7 @@ CATEGORY_EDIT = """
   <form method="post" action="/ui/categories/{{ category.id }}/edit">
     <p class="muted">Type: {{ category.type }}</p>
     <label>Name<input type="text" name="name" value="{{ category.name }}" required></label>
+    <label>Display order<input type="number" name="sequence" min="1" value="{{ category.sequence }}" required></label>
     <button type="submit">Save</button>
   </form>
 
@@ -215,6 +218,7 @@ ACCOUNT_EDIT = """
         <option value="mortgage" {% if account.type == "mortgage" %}selected{% endif %}>mortgage</option>
       </select>
     </label>
+    <label>Display order<input type="number" name="sequence" min="1" value="{{ account.sequence }}" required></label>
     <button type="submit">Save</button>
   </form>
 

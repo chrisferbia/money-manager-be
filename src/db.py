@@ -9,7 +9,9 @@ def db(request: Request):
 
 async def fetch_account(conn, account_id: int):
     row = (
-        await conn.prepare("SELECT id, name, type, created_at FROM accounts WHERE id = ?")
+        await conn.prepare(
+            "SELECT id, name, type, sequence, created_at FROM accounts WHERE id = ?"
+        )
         .bind(account_id)
         .first()
     )
@@ -30,7 +32,9 @@ async def account_name_taken(conn, name: str, exclude_id: Optional[int] = None) 
 
 async def fetch_category(conn, category_id: int):
     row = (
-        await conn.prepare("SELECT id, name, type, created_at FROM categories WHERE id = ?")
+        await conn.prepare(
+            "SELECT id, name, type, sequence, created_at FROM categories WHERE id = ?"
+        )
         .bind(category_id)
         .first()
     )
@@ -47,6 +51,34 @@ async def category_name_taken(conn, name: str, exclude_id: Optional[int] = None)
             .first()
         )
     return row is not None
+
+
+async def next_sequence(conn, table: str) -> int:
+    if table not in {"accounts", "categories"}:
+        raise ValueError("Unsupported sequence table")
+    row = await conn.prepare(
+        f"SELECT COALESCE(MAX(sequence), 0) + 1 AS sequence FROM {table}"
+    ).first()
+    return row["sequence"]
+
+
+async def reorder(conn, table: str, item_id: int, requested_sequence: int):
+    if table not in {"accounts", "categories"}:
+        raise ValueError("Unsupported sequence table")
+
+    rows = await conn.prepare(
+        f"SELECT id FROM {table} ORDER BY sequence, id"
+    ).all()
+    ordered_ids = [row["id"] for row in rows.results if row["id"] != item_id]
+    position = min(max(requested_sequence, 1), len(rows.results))
+    ordered_ids.insert(position - 1, item_id)
+
+    for sequence, row_id in enumerate(ordered_ids, start=1):
+        await (
+            conn.prepare(f"UPDATE {table} SET sequence = ? WHERE id = ?")
+            .bind(sequence, row_id)
+            .run()
+        )
 
 
 async def fetch_transaction(conn, transaction_id: int):
@@ -207,7 +239,9 @@ async def account_balance(conn, account_id: int):
 
 
 async def list_accounts_with_balance(conn):
-    rows = await conn.prepare("SELECT id, name, type, created_at FROM accounts ORDER BY id").all()
+    rows = await conn.prepare(
+        "SELECT id, name, type, sequence, created_at FROM accounts ORDER BY sequence, id"
+    ).all()
     accounts = []
     for account in rows.results:
         balance = await account_balance(conn, account["id"])
