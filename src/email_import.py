@@ -14,7 +14,7 @@ from db import fetch_transaction_by_source_message_id, insert_transaction
 BCA_SENDER = "bca@bca.co.id"
 BCA_ACCOUNT_NAME = "BCA"
 INCOME_CATEGORY_NAME = "Other Income"
-EXPENSE_CATEGORY_NAME = "Other Expense"
+EXPENSE_CATEGORY_NAME = "Other"
 
 _FIELD_LABELS = (
     "Status",

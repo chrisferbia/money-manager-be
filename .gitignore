@@ -5,3 +5,8 @@ python_modules/
 __pycache__/
 *.pyc
 .claude/
+docs/email_format/Cardless - Withdraw Cash.eml
+docs/email_format/QRIS Payment.eml
+docs/email_format/Transfer to BCA Account Pocket.eml
+docs/email_format/Transfer to BCA Account.eml
+docs/email_format/Transfer to BCA Virtual Account.eml
