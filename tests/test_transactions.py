@@ -346,17 +346,19 @@ def test_ac6_patch_updates_fields_and_can_change_transaction_type(dev_server):
     assert changed_to_expense.json()["category_id"] == category["id"]
     assert changed_to_expense.json()["related_account_id"] is None
 
-    reject_account = requests.patch(
+    changed_account = requests.patch(
         f"http://localhost:{port}/transactions/{created['id']}",
-        json={"account_id": 123456},
+        json={"account_id": destination["id"]},
     )
-    assert 400 <= reject_account.status_code < 500
+    assert changed_account.status_code == 200
+    assert changed_account.json()["account_id"] == destination["id"]
 
 
-def test_ac5_transfer_patch_rejects_account_changes(dev_server):
+def test_ac5_transfer_patch_can_change_source_account(dev_server):
     port = dev_server
     source = create_account(port, "Transfer Patch Source")
     destination = create_account(port, "Transfer Patch Destination")
+    new_source = create_account(port, "Transfer Patch New Source")
     transfer = create_transfer_transaction(port, source["id"], destination["id"]).json()
 
     updated = requests.patch(
@@ -367,11 +369,12 @@ def test_ac5_transfer_patch_rejects_account_changes(dev_server):
     assert updated.json()["amount"] == 700
     assert updated.json()["description"] == "Updated transfer"
 
-    reject_account = requests.patch(
+    changed_account = requests.patch(
         f"http://localhost:{port}/transactions/{transfer['id']}",
-        json={"account_id": destination["id"]},
+        json={"account_id": new_source["id"]},
     )
-    assert 400 <= reject_account.status_code < 500
+    assert changed_account.status_code == 200
+    assert changed_account.json()["account_id"] == new_source["id"]
 
 
 def test_ac4_transfer_delete_works_like_other_transactions(dev_server):

@@ -378,6 +378,7 @@ async def ui_edit_transaction_form(transaction_id: int, request: Request):
 @router.post("/ui/transactions/{transaction_id}/edit", response_class=HTMLResponse)
 async def ui_update_transaction(transaction_id: int, request: Request):
     form = await request.form()
+    account_id = form.get("account_id") or None
     amount = form.get("amount") or ""
     category_id = form.get("category_id") or None
     counterparty = (form.get("counterparty") or "").strip() or None
@@ -387,6 +388,7 @@ async def ui_update_transaction(transaction_id: int, request: Request):
     error = None
     try:
         payload = TransactionUpdate(
+            account_id=account_id,
             amount=amount,
             category_id=category_id,
             counterparty=counterparty,
@@ -414,6 +416,7 @@ async def ui_update_transaction(transaction_id: int, request: Request):
     return jinja_env.get_template("transaction_edit.html").render(
         transaction={
             **transaction,
+            "account_id": account_id or transaction["account_id"],
             "amount": amount,
             "category_id": category_id or transaction["category_id"],
             "counterparty": counterparty if counterparty is not None else transaction["counterparty"],

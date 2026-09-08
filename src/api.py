@@ -327,6 +327,11 @@ async def update_transaction(transaction_id: int, payload: TransactionUpdate, re
     transaction_type = (
         payload.type if "type" in payload.model_fields_set else existing["type"]
     )
+    account_id = (
+        payload.account_id
+        if "account_id" in payload.model_fields_set
+        else existing["account_id"]
+    )
     related_account_id = (
         payload.related_account_id
         if "related_account_id" in payload.model_fields_set
@@ -347,12 +352,17 @@ async def update_transaction(transaction_id: int, payload: TransactionUpdate, re
         else existing["occurred_at"]
     )
 
+    if account_id is None:
+        raise HTTPException(status_code=400, detail="Account is required")
+    if not await account_exists(conn, account_id):
+        raise HTTPException(status_code=404, detail="Account not found")
+
     if transaction_type == "transfer":
         if "category_id" in payload.model_fields_set and payload.category_id is not None:
             raise HTTPException(status_code=400, detail="Transfer transactions cannot have a category")
         if related_account_id is None:
             raise HTTPException(status_code=400, detail="Transfer transactions require a destination account")
-        if related_account_id == existing["account_id"]:
+        if related_account_id == account_id:
             raise HTTPException(status_code=400, detail="Transfer accounts must differ")
         if not await account_exists(conn, related_account_id):
             raise HTTPException(status_code=404, detail="Account not found")
@@ -377,10 +387,11 @@ async def update_transaction(transaction_id: int, payload: TransactionUpdate, re
 
     await (
         conn.prepare(
-            "UPDATE transactions SET type = ?, category_id = ?, related_account_id = ?, amount = ?, counterparty = ?, description = ?, occurred_at = ? WHERE id = ?"
+            "UPDATE transactions SET type = ?, account_id = ?, category_id = ?, related_account_id = ?, amount = ?, counterparty = ?, description = ?, occurred_at = ? WHERE id = ?"
         )
         .bind(
             transaction_type,
+            account_id,
             category_id,
             related_account_id,
             amount,

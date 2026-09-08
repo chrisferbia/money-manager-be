@@ -431,6 +431,13 @@ TEMPLATES = {
 
     <form method="post" action="/ui/transactions/{{ transaction.id }}/edit">
       <p class="muted">{% if transaction.type == "transfer" %}Transfer from account {{ transaction.account_id }} to account {{ transaction.related_account_id }}{% else %}Type: {{ transaction.type }} | Account ID: {{ transaction.account_id }}{% endif %}</p>
+      <label>Account
+        <select name="account_id" required>
+          {% for account in accounts %}
+          <option value="{{ account.id }}" {% if transaction.account_id == account.id %}selected{% endif %}>{{ account.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
       <label>Category
         <select name="category_id">
           <option value="">None</option>

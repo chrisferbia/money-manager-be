@@ -40,6 +40,5 @@ def test_transaction_create_rejects_unknown_type():
         TransactionCreate(type="refund", account_id=1, amount=100)
 
 
-def test_transaction_update_rejects_immutable_fields():
-    with pytest.raises(ValidationError):
-        TransactionUpdate(account_id=2)
+def test_transaction_update_accepts_account_changes():
+    assert TransactionUpdate(account_id=2).account_id == 2
