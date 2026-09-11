@@ -24,7 +24,8 @@
 				{
 					"binding": "money_manager",
 					"database_name": "private-money-manager",
-					"database_id": "d2876a03-f5e5-4a83-a03a-855784650ab8"
+					"database_id": "d2876a03-f5e5-4a83-a03a-855784650ab8",
+					"remote": true
 				}
 			]
 		}

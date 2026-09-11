@@ -12,6 +12,11 @@ https://docs.astral.sh/uv/getting-started/installation/#standalone-installer
 Now, if you run `uv run pywrangler dev` within this directory, it should use the config
 in `wrangler.jsonc` to run the public environment.
 
+See [the D1 development and database guide](docs/d1-commands.md) for all four
+public/private and local/remote combinations: starting development, running SELECT
+queries, and listing/applying migrations. It also explains how a binding's
+`"remote": true` setting affects local development.
+
 ## Deployments
 
 This repository contains two backend Worker environments with separate D1 databases:
@@ -46,10 +51,12 @@ branch builds are enabled, set the corresponding preview command to
 `uv run pywrangler versions upload` or
 `uv run pywrangler versions upload --env private`.
 
-Each D1 database must be initialized separately:
+For a fresh remote database, initialize it separately. Read the
+[migration setup caveat](docs/d1-commands.md#existing-schema-and-initialization-caveat)
+before using initialization together with historical migrations:
 
 ```powershell
-npx wrangler d1 execute private-money-manager --remote --file db_init.sql
+npx wrangler d1 execute private-money-manager --env private --remote --file db_init.sql
 npx wrangler d1 execute money-manager --remote --file db_init.sql
 ```
 
