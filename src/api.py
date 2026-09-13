@@ -15,6 +15,7 @@ from db import (
     fetch_category,
     fetch_transaction,
     list_transactions,
+    list_transaction_descriptions,
     next_sequence,
     reorder,
     transaction_references_account,
@@ -299,6 +300,21 @@ async def list_transaction_route(
 ): 
     conn = db(request)
     return await list_transactions(conn, account_id, category_id, type_, from_, to)
+
+
+@router.get("/transactions/descriptions", response_model=list[str])
+async def transaction_description_suggestions(
+    request: Request,
+    q: str = Query(default="", description="Literal substring to match; surrounding whitespace is ignored. Matching is ASCII case-insensitive."),
+    limit: int = Query(default=20, ge=1, le=100, description="Maximum number of suggestions."),
+):
+    """Suggest distinct descriptions from currently saved transactions.
+
+    Excludes null and empty descriptions and trims surrounding spaces.
+    Deduplication is case-sensitive; sorting is ASCII case-insensitive.
+    Omit q to return the first suggestions alphabetically.
+    """
+    return await list_transaction_descriptions(db(request), q, limit)
 
 
 @router.get("/transactions/{transaction_id}", response_model=Transaction)

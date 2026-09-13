@@ -7,6 +7,24 @@ def db(request: Request):
     return request.scope["env"].money_manager
 
 
+async def list_transaction_descriptions(conn, q: str = "", limit: int = 20):
+    result = await (
+        conn.prepare(
+            """
+            SELECT DISTINCT TRIM(description) AS description
+            FROM transactions
+            WHERE TRIM(description) <> ''
+              AND INSTR(LOWER(TRIM(description)), LOWER(?)) > 0
+            ORDER BY description COLLATE NOCASE, description
+            LIMIT ?
+            """
+        )
+        .bind(q.strip(), limit)
+        .all()
+    )
+    return [row["description"] for row in result.results]
+
+
 async def fetch_account(conn, account_id: int):
     row = (
         await conn.prepare(

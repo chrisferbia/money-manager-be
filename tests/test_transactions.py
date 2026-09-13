@@ -88,6 +88,55 @@ def create_transfer_transaction(port, source_account_id, destination_account_id,
     return requests.post(f"http://localhost:{port}/transfers", json=payload)
 
 
+def test_description_suggestions_distinct_sorted_and_filtered(dev_server):
+    account = create_account(dev_server, "Suggestions")
+    for description in [None, "", "   ", " Coffee ", "Coffee", "coffee", "Lunch", "100% cashback", "under_score"]:
+        response = create_income_transaction(dev_server, account["id"], description=description)
+        assert response.status_code == 201
+
+    url = f"http://localhost:{dev_server}/transactions/descriptions"
+    response = requests.get(url)
+    assert response.status_code == 200
+    assert response.json() == ["100% cashback", "Coffee", "coffee", "Lunch", "under_score"]
+    assert requests.get(url, params={"q": " OFf "}).json() == ["Coffee", "coffee"]
+    assert requests.get(url, params={"q": "%"}).json() == ["100% cashback"]
+    assert requests.get(url, params={"q": "_"}).json() == ["under_score"]
+    assert requests.get(url, params={"q": "' OR 1=1 --"}).json() == []
+    assert requests.get(url, params={"q": "missing"}).json() == []
+    assert requests.get(url, params={"q": "  ", "limit": 2}).json() == ["100% cashback", "Coffee"]
+
+
+def test_description_suggestions_limit_and_empty_database(dev_server):
+    url = f"http://localhost:{dev_server}/transactions/descriptions"
+    response = requests.get(url)
+    assert response.status_code == 200
+    assert response.json() == []
+    account = create_account(dev_server, "Limits")
+    for index in range(23):
+        assert create_income_transaction(dev_server, account["id"], description=f"Item {index:02}").status_code == 201
+    assert len(requests.get(url).json()) == 20
+    assert len(requests.get(url, params={"limit": 100}).json()) == 23
+    for limit in [0, -1, 101, "abc"]:
+        assert requests.get(url, params={"limit": limit}).status_code == 422
+
+
+def test_description_suggestions_include_all_types_and_reflect_edits(dev_server):
+    account = create_account(dev_server, "Source")
+    destination = create_account(dev_server, "Destination")
+    category = create_category(dev_server, "Expenses")
+    income = create_income_transaction(dev_server, account["id"], description="Salary").json()
+    assert create_expense_transaction(dev_server, destination["id"], category["id"], description="Food").status_code == 201
+    assert create_transfer_transaction(dev_server, account["id"], destination["id"], description="Savings").status_code == 201
+    url = f"http://localhost:{dev_server}/transactions/descriptions"
+    assert requests.get(url).json() == ["Food", "Salary", "Savings"]
+    transaction_url = f"http://localhost:{dev_server}/transactions/{income['id']}"
+    assert requests.get(transaction_url).status_code == 200
+    assert requests.patch(transaction_url, json={"description": "Bonus"}).status_code == 200
+    assert requests.get(url).json() == ["Bonus", "Food", "Savings"]
+    assert requests.delete(transaction_url).status_code == 204
+    assert requests.get(url).json() == ["Food", "Savings"]
+
+
 def test_ac1_create_income_transaction_returns_201(dev_server):
     port = dev_server
     account = create_account(port, "AC1 Cash")

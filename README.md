@@ -98,6 +98,7 @@ Routes are served directly from the root, without an `/api` prefix.
 | `GET`, `POST` | `/categories` | List or create categories |
 | `GET`, `PATCH`, `DELETE` | `/categories/{category_id}` | Read, update, or delete a category |
 | `GET`, `POST` | `/transactions` | List or create transactions |
+| `GET` | `/transactions/descriptions` | Suggest distinct saved descriptions; accepts `q` and `limit` ([API contract](docs/transaction-description-api.md)) |
 | `GET`, `PATCH`, `DELETE` | `/transactions/{transaction_id}` | Read, update, or delete a transaction |
 | `POST` | `/transfers` | Create a transaction with `type: "transfer"` |
 | `GET` | `/reports/expenses-by-category` | Summarize expenses, optionally by date range |
