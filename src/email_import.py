@@ -242,7 +242,7 @@ def _parse_format(subject: str | None, fields: dict[str, str]):
     if fields.get("Beneficiary Pocket") or fields.get("Beneficiary Pocket Account no."):
         return "expense", "account_pocket", ("Transfer Amount",), fields.get("Beneficiary Pocket") or "BCA account pocket"
     if "virtual account" in transfer_type or fields.get("BCA Virtual Account No."):
-        return "expense", "virtual_account", ("Pay Amount", "Total Payment"), fields.get("Company/Product Name") or fields.get("Name") or "BCA virtual account"
+        return "expense", "virtual_account", ("Total Payment", "Pay Amount"), fields.get("Company/Product Name") or fields.get("Name") or "BCA virtual account"
     if transfer_type or transaction_type:
         direction = _parse_direction(fields.get("Transfer Type") or fields.get("Transaction Type"))
         return direction, "transfer", ("Transfer Amount", "Transaction Amount", "Amount"), fields.get("Beneficiary Name") or "BCA transfer"

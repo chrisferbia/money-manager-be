@@ -70,6 +70,29 @@ def run_import(database, raw):
     asyncio.run(process_email(make_message(raw), SimpleNamespace(money_manager=database)))
 
 
+@pytest.mark.parametrize("total_payment, expected_amount", [("IDR 52,500.00", 52500), ("IDR 50,000.00", 50000), (None, 50000)])
+def test_virtual_account_import_uses_total_payment_including_fee(total_payment, expected_amount):
+    raw = bca_email(transfer_type="Transfer to BCA Virtual Account", amount="IDR 50,000.00")
+    raw = raw.replace(b"Transfer Amount", b"Pay Amount")
+    if total_payment is not None:
+        total_row = f"<tr><td>Total Payment</td><td>:</td><td>{total_payment}</td></tr>"
+        raw = raw.replace(b"</table>", total_row.encode() + b"</table>")
+
+    parsed = parse_bca_email(raw)
+    assert parsed.transaction_subtype == "virtual_account"
+    assert parsed.amount == expected_amount
+
+    database = make_database()
+    database.connection.execute("INSERT INTO categories (name, type) VALUES ('Other', 'expense')")
+    database.connection.commit()
+    run_import(database, raw)
+    transaction = database.connection.execute(
+        "SELECT amount, transaction_subtype FROM transactions"
+    ).fetchone()
+    assert tuple(transaction) == (expected_amount, "virtual_account")
+    assert database.connection.execute("SELECT status FROM email_imports").fetchone()[0] == "imported"
+
+
 def test_ac1_parser_reads_forwarded_multipart_bca_email():
     parsed = parse_bca_email(bca_email())
 
