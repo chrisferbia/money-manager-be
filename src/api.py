@@ -18,6 +18,7 @@ from db import (
     list_transaction_descriptions,
     next_sequence,
     reorder,
+    savings_balance_history,
     transaction_references_account,
     transaction_references_category,
 )
@@ -95,6 +96,14 @@ async def get_account_balance(account_id: int, request: Request):
 async def report_expenses_by_category(request: Request, from_: str | None = Query(default=None, alias="from"), to: str | None = Query(default=None, alias="to")):
     conn = db(request)
     return await expenses_by_category(conn, from_, to)
+
+
+@router.get("/reports/savings-balance-history")
+async def report_savings_balance_history(
+    request: Request,
+    months: int = Query(default=12, ge=2, le=60),
+):
+    return await savings_balance_history(db(request), months)
 
 
 @router.get("/accounts/{account_id}", response_model=Account)

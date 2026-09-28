@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import Request
@@ -254,6 +255,63 @@ async def account_balance(conn, account_id: int):
         .first()
     )
     return 0 if row is None or row["balance"] is None else row["balance"]
+
+
+def recent_month_keys(months: int = 12, now: Optional[datetime] = None):
+    current = now or datetime.now(timezone.utc)
+    month_index = current.year * 12 + current.month - 1
+    keys = []
+    for offset in range(months - 1, -1, -1):
+        index = month_index - offset
+        year, zero_based_month = divmod(index, 12)
+        keys.append(f"{year:04d}-{zero_based_month + 1:02d}")
+    return keys
+
+
+def build_savings_balance_history(month_changes, month_keys):
+    changes = {row["month"]: row["change"] or 0 for row in month_changes}
+    first_month = month_keys[0]
+    balance = sum(change for month, change in changes.items() if month < first_month)
+    history = []
+    for month in month_keys:
+        change = changes.get(month, 0)
+        balance += change
+        history.append({"month": month, "balance": balance, "change": change})
+    return history
+
+
+async def savings_balance_history(conn, months: int = 12):
+    account_row = await conn.prepare(
+        "SELECT COUNT(*) AS count FROM accounts WHERE type = 'savings'"
+    ).first()
+    result = await conn.prepare(
+        """
+        SELECT
+            SUBSTR(t.occurred_at, 1, 7) AS month,
+            COALESCE(SUM(
+                CASE
+                    WHEN source.type = 'savings' AND t.type = 'income' THEN t.amount
+                    WHEN source.type = 'savings' AND t.type IN ('expense', 'transfer') THEN -t.amount
+                    ELSE 0
+                END
+                + CASE
+                    WHEN destination.type = 'savings' AND t.type = 'transfer' THEN t.amount
+                    ELSE 0
+                END
+            ), 0) AS change
+        FROM transactions t
+        LEFT JOIN accounts source ON source.id = t.account_id
+        LEFT JOIN accounts destination ON destination.id = t.related_account_id
+        WHERE source.type = 'savings' OR destination.type = 'savings'
+        GROUP BY SUBSTR(t.occurred_at, 1, 7)
+        ORDER BY month
+        """
+    ).all()
+    month_keys = recent_month_keys(months)
+    return {
+        "account_count": 0 if account_row is None else account_row["count"],
+        "months": build_savings_balance_history(result.results, month_keys),
+    }
 
 
 async def list_accounts_with_balance(conn):

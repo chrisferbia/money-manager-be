@@ -1,5 +1,7 @@
 """Tests for specs/0003-transactions.md."""
 
+from datetime import datetime, timezone
+
 import requests
 import pytest
 
@@ -86,6 +88,56 @@ def create_transfer_transaction(port, source_account_id, destination_account_id,
     }
     payload.update(overrides)
     return requests.post(f"http://localhost:{port}/transfers", json=payload)
+
+
+def test_savings_balance_history_combines_savings_accounts(dev_server):
+    port = dev_server
+    savings_a = create_account(port, "History Savings A", "savings")
+    savings_b = create_account(port, "History Savings B", "savings")
+    checking = create_account(port, "History Checking", "bank")
+    category = create_category(port, "History Expense")
+    now = datetime.now(timezone.utc)
+    current_month = f"{now.year:04d}-{now.month:02d}"
+    previous_index = now.year * 12 + now.month - 2
+    previous_year, previous_zero_month = divmod(previous_index, 12)
+    previous_month = f"{previous_year:04d}-{previous_zero_month + 1:02d}"
+
+    assert create_income(
+        port, savings_a["id"], 1000, f"{previous_month}-10T10:00:00Z"
+    ).status_code == 201
+    assert create_transfer_transaction(
+        port,
+        checking["id"],
+        savings_b["id"],
+        amount=500,
+        occurred_at=f"{current_month}-05T10:00:00Z",
+    ).status_code == 201
+    assert create_expense(
+        port,
+        savings_a["id"],
+        category["id"],
+        200,
+        f"{current_month}-06T10:00:00Z",
+    ).status_code == 201
+    assert create_transfer_transaction(
+        port,
+        savings_a["id"],
+        savings_b["id"],
+        amount=300,
+        occurred_at=f"{current_month}-07T10:00:00Z",
+    ).status_code == 201
+
+    response = requests.get(
+        f"http://localhost:{port}/reports/savings-balance-history", params={"months": 2}
+    )
+
+    assert response.status_code == 200
+    report = response.json()
+    assert report["account_count"] >= 2
+    assert report["months"] == [
+        {"month": previous_month, "balance": 1000, "change": 1000},
+        {"month": current_month, "balance": 1300, "change": 300},
+    ]
 
 
 def test_description_suggestions_distinct_sorted_and_filtered(dev_server):
