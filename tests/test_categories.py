@@ -31,6 +31,45 @@ def test_ac1_category_type_is_returned(dev_server):
     assert response.json()["type"] == "income"
 
 
+def test_expense_category_monthly_budget_can_be_created_updated_and_cleared(dev_server):
+    port = dev_server
+    created = requests.post(
+        f"http://localhost:{port}/categories",
+        json={"name": "Budgeted Food", "monthly_budget": 2_000_000},
+    )
+    assert created.status_code == 201
+    assert created.json()["monthly_budget"] == 2_000_000
+
+    updated = requests.patch(
+        f"http://localhost:{port}/categories/{created.json()['id']}",
+        json={"monthly_budget": 2_500_000},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["monthly_budget"] == 2_500_000
+
+    cleared = requests.patch(
+        f"http://localhost:{port}/categories/{created.json()['id']}",
+        json={"monthly_budget": None},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["monthly_budget"] is None
+
+
+def test_monthly_budget_requires_positive_amount_and_expense_category(dev_server):
+    port = dev_server
+    invalid_amount = requests.post(
+        f"http://localhost:{port}/categories",
+        json={"name": "Invalid Budget", "monthly_budget": 0},
+    )
+    assert invalid_amount.status_code == 422
+
+    income_budget = requests.post(
+        f"http://localhost:{port}/categories",
+        json={"name": "Budgeted Salary", "type": "income", "monthly_budget": 1_000_000},
+    )
+    assert income_budget.status_code == 400
+
+
 def test_ac2_duplicate_name_is_rejected(dev_server):
     port = dev_server
     first = requests.post(

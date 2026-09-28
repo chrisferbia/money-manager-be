@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS categories (
     name TEXT NOT NULL UNIQUE,
     type TEXT NOT NULL DEFAULT 'expense',
     sequence INTEGER NOT NULL DEFAULT 0,
+    monthly_budget INTEGER CHECK(monthly_budget IS NULL OR monthly_budget > 0),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

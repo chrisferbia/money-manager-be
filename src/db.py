@@ -52,7 +52,7 @@ async def account_name_taken(conn, name: str, exclude_id: Optional[int] = None) 
 async def fetch_category(conn, category_id: int):
     row = (
         await conn.prepare(
-            "SELECT id, name, type, sequence, created_at FROM categories WHERE id = ?"
+            "SELECT id, name, type, sequence, monthly_budget, created_at FROM categories WHERE id = ?"
         )
         .bind(category_id)
         .first()

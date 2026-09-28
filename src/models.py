@@ -27,11 +27,13 @@ class CategoryCreate(BaseModel):
     name: str = Field(min_length=1)
     type: Literal["income", "expense"] = "expense"
     sequence: Optional[int] = Field(default=None, ge=1)
+    monthly_budget: Optional[int] = Field(default=None, gt=0)
 
 
 class CategoryUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1)
     sequence: Optional[int] = Field(default=None, ge=1)
+    monthly_budget: Optional[int] = Field(default=None, gt=0)
 
 
 class Category(BaseModel):
@@ -39,6 +41,7 @@ class Category(BaseModel):
     name: str
     type: Literal["income", "expense"] = "expense"
     sequence: int
+    monthly_budget: Optional[int] = None
     created_at: str
 
 

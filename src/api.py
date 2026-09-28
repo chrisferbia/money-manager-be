@@ -154,12 +154,19 @@ async def create_category(payload: CategoryCreate, request: Request):
     conn = db(request)
     if await category_name_taken(conn, payload.name):
         raise HTTPException(status_code=409, detail="Category name already exists")
+    if payload.type != "expense" and payload.monthly_budget is not None:
+        raise HTTPException(status_code=400, detail="Only expense categories can have a budget")
 
     result = (
         await conn.prepare(
-            "INSERT INTO categories (name, type, sequence) VALUES (?, ?, ?)"
+            "INSERT INTO categories (name, type, sequence, monthly_budget) VALUES (?, ?, ?, ?)"
         )
-        .bind(payload.name, payload.type, await next_sequence(conn, "categories"))
+        .bind(
+            payload.name,
+            payload.type,
+            await next_sequence(conn, "categories"),
+            payload.monthly_budget,
+        )
         .run()
     )
     if payload.sequence is not None:
@@ -171,7 +178,7 @@ async def create_category(payload: CategoryCreate, request: Request):
 async def list_categories(request: Request):
     conn = db(request)
     result = await conn.prepare(
-        "SELECT id, name, type, sequence, created_at FROM categories ORDER BY sequence, id"
+        "SELECT id, name, type, sequence, monthly_budget, created_at FROM categories ORDER BY sequence, id"
     ).all()
     return result.results
 
@@ -196,8 +203,21 @@ async def update_category(category_id: int, payload: CategoryUpdate, request: Re
 
     if payload.name is not None and await category_name_taken(conn, name, exclude_id=category_id):
         raise HTTPException(status_code=409, detail="Category name already exists")
+    if (
+        "monthly_budget" in payload.model_fields_set
+        and payload.monthly_budget is not None
+        and existing["type"] != "expense"
+    ):
+        raise HTTPException(status_code=400, detail="Only expense categories can have a budget")
 
-    await conn.prepare("UPDATE categories SET name = ? WHERE id = ?").bind(name, category_id).run()
+    monthly_budget = (
+        payload.monthly_budget
+        if "monthly_budget" in payload.model_fields_set
+        else existing["monthly_budget"]
+    )
+    await conn.prepare(
+        "UPDATE categories SET name = ?, monthly_budget = ? WHERE id = ?"
+    ).bind(name, monthly_budget, category_id).run()
     if payload.sequence is not None:
         await reorder(conn, "categories", category_id, payload.sequence)
     return await fetch_category(conn, category_id)
