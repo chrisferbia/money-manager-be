@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
@@ -32,10 +33,22 @@ from models import (
     Transaction,
     TransactionCreate,
     TransactionUpdate,
+    CryptoHoldingCreate,
+    CryptoHoldingUpdate,
 )
 from domain import validate_transaction_rules, validate_transfer_rules
+from crypto import COIN_ID_RE, account_holdings, normalize_quantity, refresh_prices, search_coins
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+async def _require_ledger_account(conn, account_id: int):
+    account = await fetch_account(conn, account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if account["valuation_mode"] == "crypto":
+        raise HTTPException(status_code=400, detail="Crypto accounts are valued from holdings, not transactions")
 
 
 def _now_iso():
@@ -59,12 +72,14 @@ def _normalize_occurred_at(value: str | None):
 @router.post("/accounts", status_code=201, response_model=Account)
 async def create_account(payload: AccountCreate, request: Request):
     conn = db(request)
+    if payload.valuation_mode == "crypto" and payload.type != "investment":
+        raise HTTPException(status_code=400, detail="Crypto tracking requires an Investment account")
     if await account_name_taken(conn, payload.name):
         raise HTTPException(status_code=409, detail="Account name already exists")
 
     result = (
-        await conn.prepare("INSERT INTO accounts (name, type, sequence) VALUES (?, ?, ?)")
-        .bind(payload.name, payload.type, await next_sequence(conn, "accounts"))
+        await conn.prepare("INSERT INTO accounts (name, type, sequence, valuation_mode) VALUES (?, ?, ?, ?)")
+        .bind(payload.name, payload.type, await next_sequence(conn, "accounts"), payload.valuation_mode)
         .run()
     )
     if payload.sequence is not None:
@@ -76,10 +91,12 @@ async def create_account(payload: AccountCreate, request: Request):
 async def list_accounts(request: Request, include_balance: bool = False):
     conn = db(request)
     result = await conn.prepare(
-        "SELECT id, name, type, sequence, created_at FROM accounts ORDER BY sequence, id"
+        "SELECT id, name, type, sequence, valuation_mode, created_at FROM accounts ORDER BY sequence, id"
     ).all()
     accounts = result.results
     if include_balance:
+        coins = await conn.prepare("SELECT DISTINCT coin_id FROM crypto_holdings").all()
+        await refresh_prices(conn, request.scope["env"], [row["coin_id"] for row in coins.results])
         return [{**account, "balance": await account_balance(conn, account["id"])} for account in accounts]
     return accounts
 
@@ -89,6 +106,8 @@ async def get_account_balance(account_id: int, request: Request):
     conn = db(request)
     if not await account_exists(conn, account_id):
         raise HTTPException(status_code=404, detail="Account not found")
+    coins = await conn.prepare("SELECT coin_id FROM crypto_holdings WHERE account_id = ?").bind(account_id).all()
+    await refresh_prices(conn, request.scope["env"], [row["coin_id"] for row in coins.results])
     return {"account_id": account_id, "balance": await account_balance(conn, account_id)}
 
 
@@ -124,13 +143,24 @@ async def update_account(account_id: int, payload: AccountUpdate, request: Reque
 
     name = payload.name if payload.name is not None else existing["name"]
     type_ = payload.type if payload.type is not None else existing["type"]
+    valuation_mode = payload.valuation_mode if payload.valuation_mode is not None else existing["valuation_mode"]
+    if valuation_mode == "crypto" and type_ != "investment":
+        raise HTTPException(status_code=400, detail="Crypto tracking requires an Investment account")
+    if existing["valuation_mode"] == "crypto" and valuation_mode != "crypto":
+        holdings = await conn.prepare("SELECT id FROM crypto_holdings WHERE account_id = ? LIMIT 1").bind(account_id).first()
+        if holdings:
+            raise HTTPException(status_code=409, detail="Remove crypto holdings before disabling crypto tracking")
+    if existing["valuation_mode"] != "crypto" and valuation_mode == "crypto":
+        ledger_balance = await account_balance(conn, account_id)
+        if ledger_balance != 0 and not payload.confirm_ledger_replacement:
+            raise HTTPException(status_code=409, detail="Confirm replacing the existing transaction balance with crypto holdings value")
 
     if payload.name is not None and await account_name_taken(conn, name, exclude_id=account_id):
         raise HTTPException(status_code=409, detail="Account name already exists")
 
     await (
-        conn.prepare("UPDATE accounts SET name = ?, type = ? WHERE id = ?")
-        .bind(name, type_, account_id)
+        conn.prepare("UPDATE accounts SET name = ?, type = ?, valuation_mode = ? WHERE id = ?")
+        .bind(name, type_, valuation_mode, account_id)
         .run()
     )
     if payload.sequence is not None:
@@ -146,7 +176,85 @@ async def delete_account(account_id: int, request: Request):
         raise HTTPException(status_code=404, detail="Account not found")
     if await transaction_references_account(conn, account_id):
         raise HTTPException(status_code=409, detail="Account has transactions")
+    if await conn.prepare("SELECT id FROM crypto_holdings WHERE account_id = ? LIMIT 1").bind(account_id).first():
+        raise HTTPException(status_code=409, detail="Account has crypto holdings")
     await conn.prepare("DELETE FROM accounts WHERE id = ?").bind(account_id).run()
+
+
+@router.get("/crypto/search")
+async def crypto_search(request: Request, q: str = Query(min_length=2, max_length=80)):
+    if len(q.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Enter at least two search characters")
+    try:
+        return await search_coins(q.strip(), request.scope["env"])
+    except Exception as exc:
+        logger.exception("Coin search provider request failed")
+        raise HTTPException(status_code=503, detail="Coin search is temporarily unavailable") from exc
+
+
+@router.get("/accounts/{account_id}/holdings")
+async def list_crypto_holdings(account_id: int, request: Request):
+    conn = db(request)
+    account = await fetch_account(conn, account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if account["valuation_mode"] != "crypto":
+        raise HTTPException(status_code=400, detail="Account does not track crypto holdings")
+    coins = await conn.prepare("SELECT coin_id FROM crypto_holdings WHERE account_id = ?").bind(account_id).all()
+    await refresh_prices(conn, request.scope["env"], [row["coin_id"] for row in coins.results])
+    return await account_holdings(conn, account_id)
+
+
+@router.post("/accounts/{account_id}/holdings", status_code=201)
+async def add_crypto_holding(account_id: int, payload: CryptoHoldingCreate, request: Request):
+    conn = db(request)
+    account = await fetch_account(conn, account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if account["valuation_mode"] != "crypto":
+        raise HTTPException(status_code=400, detail="Account does not track crypto holdings")
+    if not COIN_ID_RE.fullmatch(payload.coin_id):
+        raise HTTPException(status_code=400, detail="Invalid coin ID")
+    if not payload.name.strip() or not payload.symbol.strip():
+        raise HTTPException(status_code=400, detail="Coin name and symbol are required")
+    try:
+        quantity = normalize_quantity(payload.quantity)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    existing = await conn.prepare("SELECT id FROM crypto_holdings WHERE account_id = ? AND coin_id = ?").bind(account_id, payload.coin_id).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Coin already exists in this account; edit its quantity")
+    result = await (
+        conn.prepare("INSERT INTO crypto_holdings (account_id, coin_id, name, symbol, quantity) VALUES (?, ?, ?, ?, ?)")
+        .bind(account_id, payload.coin_id, payload.name.strip(), payload.symbol.strip().upper(), quantity)
+        .run()
+    )
+    await refresh_prices(conn, request.scope["env"], [payload.coin_id])
+    holdings = await account_holdings(conn, account_id)
+    return next(row for row in holdings if row["id"] == result.meta.last_row_id)
+
+
+@router.patch("/accounts/{account_id}/holdings/{holding_id}")
+async def update_crypto_holding(account_id: int, holding_id: int, payload: CryptoHoldingUpdate, request: Request):
+    conn = db(request)
+    existing = await conn.prepare("SELECT id FROM crypto_holdings WHERE id = ? AND account_id = ?").bind(holding_id, account_id).first()
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Holding not found")
+    try:
+        quantity = normalize_quantity(payload.quantity)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await conn.prepare("UPDATE crypto_holdings SET quantity = ? WHERE id = ?").bind(quantity, holding_id).run()
+    return next(row for row in await account_holdings(conn, account_id) if row["id"] == holding_id)
+
+
+@router.delete("/accounts/{account_id}/holdings/{holding_id}", status_code=204)
+async def delete_crypto_holding(account_id: int, holding_id: int, request: Request):
+    conn = db(request)
+    existing = await conn.prepare("SELECT id FROM crypto_holdings WHERE id = ? AND account_id = ?").bind(holding_id, account_id).first()
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Holding not found")
+    await conn.prepare("DELETE FROM crypto_holdings WHERE id = ?").bind(holding_id).run()
 
 
 @router.post("/categories", status_code=201, response_model=Category)
@@ -237,9 +345,7 @@ async def delete_category(category_id: int, request: Request):
 @router.post("/transactions", status_code=201, response_model=Transaction)
 async def create_transaction(payload: TransactionCreate, request: Request):
     conn = db(request)
-
-    if not await account_exists(conn, payload.account_id):
-        raise HTTPException(status_code=404, detail="Account not found")
+    await _require_ledger_account(conn, payload.account_id)
 
     try:
         validate_transaction_rules(payload)
@@ -258,8 +364,7 @@ async def create_transaction(payload: TransactionCreate, request: Request):
                 raise HTTPException(status_code=400, detail="Category type must match transaction type")
         category_id = payload.category_id
     elif payload.type == "transfer":
-        if not await account_exists(conn, payload.related_account_id):
-            raise HTTPException(status_code=404, detail="Account not found")
+        await _require_ledger_account(conn, payload.related_account_id)
         related_account_id = payload.related_account_id
 
     occurred_at = _normalize_occurred_at(payload.occurred_at)
@@ -287,15 +392,12 @@ async def create_transaction(payload: TransactionCreate, request: Request):
 
 async def create_transfer(payload: TransactionCreate, request: Request):
     conn = db(request)
-
-    if not await account_exists(conn, payload.account_id):
-        raise HTTPException(status_code=404, detail="Account not found")
+    await _require_ledger_account(conn, payload.account_id)
     try:
         validate_transfer_rules(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if not await account_exists(conn, payload.related_account_id):
-        raise HTTPException(status_code=404, detail="Account not found")
+    await _require_ledger_account(conn, payload.related_account_id)
 
     occurred_at = _normalize_occurred_at(payload.occurred_at)
     counterparty = payload.counterparty if payload.counterparty != "" else None
@@ -399,8 +501,7 @@ async def update_transaction(transaction_id: int, payload: TransactionUpdate, re
 
     if account_id is None:
         raise HTTPException(status_code=400, detail="Account is required")
-    if not await account_exists(conn, account_id):
-        raise HTTPException(status_code=404, detail="Account not found")
+    await _require_ledger_account(conn, account_id)
 
     if transaction_type == "transfer":
         if "category_id" in payload.model_fields_set and payload.category_id is not None:
@@ -409,8 +510,7 @@ async def update_transaction(transaction_id: int, payload: TransactionUpdate, re
             raise HTTPException(status_code=400, detail="Transfer transactions require a destination account")
         if related_account_id == account_id:
             raise HTTPException(status_code=400, detail="Transfer accounts must differ")
-        if not await account_exists(conn, related_account_id):
-            raise HTTPException(status_code=404, detail="Account not found")
+        await _require_ledger_account(conn, related_account_id)
         category_id = None
     else:
         if "related_account_id" in payload.model_fields_set and payload.related_account_id is not None:

@@ -65,7 +65,7 @@ async def ui_home(request: Request):
     recent = period_transactions[:5]
     report = await expenses_by_category(conn, from_bound, to_bound)
     account_names = {account["id"]: account["name"] for account in accounts}
-    total_balance = sum(account["balance"] for account in accounts)
+    total_balance = sum(account["balance"] or 0 for account in accounts)
     total_income = sum(tx["amount"] for tx in period_transactions if tx["type"] == "income")
     total_expense = sum(tx["amount"] for tx in period_transactions if tx["type"] == "expense")
     return jinja_env.get_template("home.html").render(

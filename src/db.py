@@ -29,7 +29,7 @@ async def list_transaction_descriptions(conn, q: str = "", limit: int = 20):
 async def fetch_account(conn, account_id: int):
     row = (
         await conn.prepare(
-            "SELECT id, name, type, sequence, created_at FROM accounts WHERE id = ?"
+            "SELECT id, name, type, sequence, valuation_mode, created_at FROM accounts WHERE id = ?"
         )
         .bind(account_id)
         .first()
@@ -235,6 +235,11 @@ async def list_transactions(
 
 
 async def account_balance(conn, account_id: int):
+    account = await fetch_account(conn, account_id)
+    if account is not None and account["valuation_mode"] == "crypto":
+        from crypto import crypto_account_value
+
+        return await crypto_account_value(conn, account_id)
     row = (
         await conn.prepare(
             """
@@ -316,7 +321,7 @@ async def savings_balance_history(conn, months: int = 12):
 
 async def list_accounts_with_balance(conn):
     rows = await conn.prepare(
-        "SELECT id, name, type, sequence, created_at FROM accounts ORDER BY sequence, id"
+        "SELECT id, name, type, sequence, valuation_mode, created_at FROM accounts ORDER BY sequence, id"
     ).all()
     accounts = []
     for account in rows.results:

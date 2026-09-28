@@ -42,7 +42,7 @@ class FakeD1:
 
     def reset(self):
         self.connection.executescript(
-            "DELETE FROM transactions; DELETE FROM categories; DELETE FROM accounts;"
+            "DELETE FROM crypto_holdings; DELETE FROM crypto_prices; DELETE FROM transactions; DELETE FROM categories; DELETE FROM accounts;"
         )
         self.connection.commit()
 

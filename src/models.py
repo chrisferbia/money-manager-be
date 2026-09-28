@@ -7,12 +7,15 @@ class AccountCreate(BaseModel):
     name: str = Field(min_length=1)
     type: str = Field(min_length=1)
     sequence: Optional[int] = Field(default=None, ge=1)
+    valuation_mode: Literal["ledger", "crypto"] = "ledger"
 
 
 class AccountUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1)
     type: Optional[str] = Field(default=None, min_length=1)
     sequence: Optional[int] = Field(default=None, ge=1)
+    valuation_mode: Optional[Literal["ledger", "crypto"]] = None
+    confirm_ledger_replacement: bool = False
 
 
 class Account(BaseModel):
@@ -20,7 +23,19 @@ class Account(BaseModel):
     name: str
     type: str
     sequence: int
+    valuation_mode: Literal["ledger", "crypto"] = "ledger"
     created_at: str
+
+
+class CryptoHoldingCreate(BaseModel):
+    coin_id: str = Field(min_length=1, max_length=100)
+    name: str = Field(min_length=1, max_length=100)
+    symbol: str = Field(min_length=1, max_length=30)
+    quantity: str = Field(min_length=1, max_length=50)
+
+
+class CryptoHoldingUpdate(BaseModel):
+    quantity: str = Field(min_length=1, max_length=50)
 
 
 class CategoryCreate(BaseModel):

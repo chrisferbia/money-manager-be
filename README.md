@@ -7,6 +7,7 @@ A personal finance application built with Python, FastAPI, and Cloudflare Worker
 - Create, edit, delete, and reorder accounts and income/expense categories.
 - Record income, expenses, and transfers between accounts, with counterparties, descriptions, and transaction dates.
 - Calculate account balances from transaction history and summarize expenses by category.
+- Track manually entered crypto quantities in Investment accounts, with cached CoinGecko IDR prices and market-value balances.
 - View a dashboard with balances, income, expenses, net change, and recent transactions. Filter activity by month or date range; balances remain all-time totals.
 - Import supported BCA emails with Message-ID deduplication and an import audit log.
 - Deploy separate public and private Workers, each connected to its own D1 database.
@@ -72,6 +73,14 @@ uv run pywrangler dev --env private --port 8787
 Open [the dashboard](http://localhost:8787) or [interactive API documentation](http://localhost:8787/docs). `npm run dev` and `npm start` also start the default environment.
 
 If Windows development fails with missing vendored dependencies such as `jinja2`, see the [PyWrangler Windows troubleshooting guide](docs/pywrangler-windows-vendoring-fix.md).
+
+### Crypto holdings setup
+
+Apply `migrations/0009_crypto_holdings.sql` **once** to each existing D1 database before deploying a frontend that uses crypto tracking. Fresh databases initialized with `db_init.sql` already include the schema. Check the selected Wrangler environment and whether the command targets local or remote D1 before running it; this repository's development bindings currently point to remote D1.
+
+The backend calls CoinGecko for coin search and IDR prices. Public requests can work without a key, but may be rate-limited. Optionally configure `COINGECKO_API_KEY` as a backend Worker secret (a CoinGecko Demo API key); never put it in the frontend's `BACKEND_URL` or `VITE_API_URL`. Prices are cached in D1 for ten minutes. A failed refresh retains the last known price and marks it stale; a holding without any known price makes its account balance unavailable rather than silently counting it as zero.
+
+Crypto-enabled accounts are valued from holdings, not their historical transaction balance. Enabling this on an existing Investment account with a nonzero ledger balance requires explicit confirmation. New transactions and transfers to/from crypto-enabled accounts are rejected; update the source account separately when adding a holding. Existing transactions remain stored for audit, but are excluded from that account's displayed market value.
 
 ## Web interface
 
