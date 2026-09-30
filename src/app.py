@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import api
 import auth
+import demo
 import ui
 
 
@@ -18,5 +19,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(auth.router)
+app.include_router(demo.router)
 app.include_router(api.router)
 app.include_router(ui.router)

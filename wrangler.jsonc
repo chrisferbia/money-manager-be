@@ -2,6 +2,7 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "money-manager-be",
 	"main": "src/entry.py",
+	"keep_vars": true,
 	"compatibility_date": "2025-11-02",
 	"compatibility_flags": [
 		"python_workers",
