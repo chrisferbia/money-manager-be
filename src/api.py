@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
 import logging
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from auth import require_workspace
 
 from db import (
     account_name_taken,
@@ -39,7 +40,7 @@ from models import (
 from domain import validate_transaction_rules, validate_transfer_rules
 from crypto import COIN_ID_RE, account_holdings, normalize_quantity, refresh_prices, search_coins
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_workspace)])
 logger = logging.getLogger(__name__)
 
 
@@ -78,8 +79,8 @@ async def create_account(payload: AccountCreate, request: Request):
         raise HTTPException(status_code=409, detail="Account name already exists")
 
     result = (
-        await conn.prepare("INSERT INTO accounts (name, type, sequence, valuation_mode) VALUES (?, ?, ?, ?)")
-        .bind(payload.name, payload.type, await next_sequence(conn, "accounts"), payload.valuation_mode)
+        await conn.prepare("INSERT INTO accounts (workspace_id, name, type, sequence, valuation_mode) VALUES (?, ?, ?, ?, ?)")
+        .bind(conn.workspace_id, payload.name, payload.type, await next_sequence(conn, "accounts"), payload.valuation_mode)
         .run()
     )
     if payload.sequence is not None:
@@ -91,11 +92,11 @@ async def create_account(payload: AccountCreate, request: Request):
 async def list_accounts(request: Request, include_balance: bool = False):
     conn = db(request)
     result = await conn.prepare(
-        "SELECT id, name, type, sequence, valuation_mode, created_at FROM accounts ORDER BY sequence, id"
-    ).all()
+        "SELECT id, name, type, sequence, valuation_mode, created_at FROM accounts WHERE workspace_id = ? ORDER BY sequence, id"
+    ).bind(conn.workspace_id).all()
     accounts = result.results
     if include_balance:
-        coins = await conn.prepare("SELECT DISTINCT coin_id FROM crypto_holdings").all()
+        coins = await conn.prepare("SELECT DISTINCT coin_id FROM crypto_holdings WHERE workspace_id = ?").bind(conn.workspace_id).all()
         await refresh_prices(conn, request.scope["env"], [row["coin_id"] for row in coins.results])
         return [{**account, "balance": await account_balance(conn, account["id"])} for account in accounts]
     return accounts
@@ -106,7 +107,7 @@ async def get_account_balance(account_id: int, request: Request):
     conn = db(request)
     if not await account_exists(conn, account_id):
         raise HTTPException(status_code=404, detail="Account not found")
-    coins = await conn.prepare("SELECT coin_id FROM crypto_holdings WHERE account_id = ?").bind(account_id).all()
+    coins = await conn.prepare("SELECT coin_id FROM crypto_holdings WHERE workspace_id = ? AND account_id = ?").bind(conn.workspace_id, account_id).all()
     await refresh_prices(conn, request.scope["env"], [row["coin_id"] for row in coins.results])
     return {"account_id": account_id, "balance": await account_balance(conn, account_id)}
 
@@ -147,7 +148,7 @@ async def update_account(account_id: int, payload: AccountUpdate, request: Reque
     if valuation_mode == "crypto" and type_ != "investment":
         raise HTTPException(status_code=400, detail="Crypto tracking requires an Investment account")
     if existing["valuation_mode"] == "crypto" and valuation_mode != "crypto":
-        holdings = await conn.prepare("SELECT id FROM crypto_holdings WHERE account_id = ? LIMIT 1").bind(account_id).first()
+        holdings = await conn.prepare("SELECT id FROM crypto_holdings WHERE workspace_id = ? AND account_id = ? LIMIT 1").bind(conn.workspace_id, account_id).first()
         if holdings:
             raise HTTPException(status_code=409, detail="Remove crypto holdings before disabling crypto tracking")
     if existing["valuation_mode"] != "crypto" and valuation_mode == "crypto":
@@ -159,8 +160,8 @@ async def update_account(account_id: int, payload: AccountUpdate, request: Reque
         raise HTTPException(status_code=409, detail="Account name already exists")
 
     await (
-        conn.prepare("UPDATE accounts SET name = ?, type = ?, valuation_mode = ? WHERE id = ?")
-        .bind(name, type_, valuation_mode, account_id)
+        conn.prepare("UPDATE accounts SET name = ?, type = ?, valuation_mode = ? WHERE workspace_id = ? AND id = ?")
+        .bind(name, type_, valuation_mode, conn.workspace_id, account_id)
         .run()
     )
     if payload.sequence is not None:
@@ -176,9 +177,9 @@ async def delete_account(account_id: int, request: Request):
         raise HTTPException(status_code=404, detail="Account not found")
     if await transaction_references_account(conn, account_id):
         raise HTTPException(status_code=409, detail="Account has transactions")
-    if await conn.prepare("SELECT id FROM crypto_holdings WHERE account_id = ? LIMIT 1").bind(account_id).first():
+    if await conn.prepare("SELECT id FROM crypto_holdings WHERE workspace_id = ? AND account_id = ? LIMIT 1").bind(conn.workspace_id, account_id).first():
         raise HTTPException(status_code=409, detail="Account has crypto holdings")
-    await conn.prepare("DELETE FROM accounts WHERE id = ?").bind(account_id).run()
+    await conn.prepare("DELETE FROM accounts WHERE workspace_id = ? AND id = ?").bind(conn.workspace_id, account_id).run()
 
 
 @router.get("/crypto/search")
@@ -200,7 +201,7 @@ async def list_crypto_holdings(account_id: int, request: Request):
         raise HTTPException(status_code=404, detail="Account not found")
     if account["valuation_mode"] != "crypto":
         raise HTTPException(status_code=400, detail="Account does not track crypto holdings")
-    coins = await conn.prepare("SELECT coin_id FROM crypto_holdings WHERE account_id = ?").bind(account_id).all()
+    coins = await conn.prepare("SELECT coin_id FROM crypto_holdings WHERE workspace_id = ? AND account_id = ?").bind(conn.workspace_id, account_id).all()
     await refresh_prices(conn, request.scope["env"], [row["coin_id"] for row in coins.results])
     return await account_holdings(conn, account_id)
 
@@ -221,12 +222,12 @@ async def add_crypto_holding(account_id: int, payload: CryptoHoldingCreate, requ
         quantity = normalize_quantity(payload.quantity)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    existing = await conn.prepare("SELECT id FROM crypto_holdings WHERE account_id = ? AND coin_id = ?").bind(account_id, payload.coin_id).first()
+    existing = await conn.prepare("SELECT id FROM crypto_holdings WHERE workspace_id = ? AND account_id = ? AND coin_id = ?").bind(conn.workspace_id, account_id, payload.coin_id).first()
     if existing:
         raise HTTPException(status_code=409, detail="Coin already exists in this account; edit its quantity")
     result = await (
-        conn.prepare("INSERT INTO crypto_holdings (account_id, coin_id, name, symbol, quantity) VALUES (?, ?, ?, ?, ?)")
-        .bind(account_id, payload.coin_id, payload.name.strip(), payload.symbol.strip().upper(), quantity)
+        conn.prepare("INSERT INTO crypto_holdings (workspace_id, account_id, coin_id, name, symbol, quantity) VALUES (?, ?, ?, ?, ?, ?)")
+        .bind(conn.workspace_id, account_id, payload.coin_id, payload.name.strip(), payload.symbol.strip().upper(), quantity)
         .run()
     )
     await refresh_prices(conn, request.scope["env"], [payload.coin_id])
@@ -237,24 +238,24 @@ async def add_crypto_holding(account_id: int, payload: CryptoHoldingCreate, requ
 @router.patch("/accounts/{account_id}/holdings/{holding_id}")
 async def update_crypto_holding(account_id: int, holding_id: int, payload: CryptoHoldingUpdate, request: Request):
     conn = db(request)
-    existing = await conn.prepare("SELECT id FROM crypto_holdings WHERE id = ? AND account_id = ?").bind(holding_id, account_id).first()
+    existing = await conn.prepare("SELECT id FROM crypto_holdings WHERE workspace_id = ? AND id = ? AND account_id = ?").bind(conn.workspace_id, holding_id, account_id).first()
     if existing is None:
         raise HTTPException(status_code=404, detail="Holding not found")
     try:
         quantity = normalize_quantity(payload.quantity)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    await conn.prepare("UPDATE crypto_holdings SET quantity = ? WHERE id = ?").bind(quantity, holding_id).run()
+    await conn.prepare("UPDATE crypto_holdings SET quantity = ? WHERE workspace_id = ? AND id = ?").bind(quantity, conn.workspace_id, holding_id).run()
     return next(row for row in await account_holdings(conn, account_id) if row["id"] == holding_id)
 
 
 @router.delete("/accounts/{account_id}/holdings/{holding_id}", status_code=204)
 async def delete_crypto_holding(account_id: int, holding_id: int, request: Request):
     conn = db(request)
-    existing = await conn.prepare("SELECT id FROM crypto_holdings WHERE id = ? AND account_id = ?").bind(holding_id, account_id).first()
+    existing = await conn.prepare("SELECT id FROM crypto_holdings WHERE workspace_id = ? AND id = ? AND account_id = ?").bind(conn.workspace_id, holding_id, account_id).first()
     if existing is None:
         raise HTTPException(status_code=404, detail="Holding not found")
-    await conn.prepare("DELETE FROM crypto_holdings WHERE id = ?").bind(holding_id).run()
+    await conn.prepare("DELETE FROM crypto_holdings WHERE workspace_id = ? AND id = ?").bind(conn.workspace_id, holding_id).run()
 
 
 @router.post("/categories", status_code=201, response_model=Category)
@@ -267,9 +268,10 @@ async def create_category(payload: CategoryCreate, request: Request):
 
     result = (
         await conn.prepare(
-            "INSERT INTO categories (name, type, sequence, monthly_budget) VALUES (?, ?, ?, ?)"
+            "INSERT INTO categories (workspace_id, name, type, sequence, monthly_budget) VALUES (?, ?, ?, ?, ?)"
         )
         .bind(
+            conn.workspace_id,
             payload.name,
             payload.type,
             await next_sequence(conn, "categories"),
@@ -286,8 +288,8 @@ async def create_category(payload: CategoryCreate, request: Request):
 async def list_categories(request: Request):
     conn = db(request)
     result = await conn.prepare(
-        "SELECT id, name, type, sequence, monthly_budget, created_at FROM categories ORDER BY sequence, id"
-    ).all()
+        "SELECT id, name, type, sequence, monthly_budget, created_at FROM categories WHERE workspace_id = ? ORDER BY sequence, id"
+    ).bind(conn.workspace_id).all()
     return result.results
 
 
@@ -324,8 +326,8 @@ async def update_category(category_id: int, payload: CategoryUpdate, request: Re
         else existing["monthly_budget"]
     )
     await conn.prepare(
-        "UPDATE categories SET name = ?, monthly_budget = ? WHERE id = ?"
-    ).bind(name, monthly_budget, category_id).run()
+        "UPDATE categories SET name = ?, monthly_budget = ? WHERE workspace_id = ? AND id = ?"
+    ).bind(name, monthly_budget, conn.workspace_id, category_id).run()
     if payload.sequence is not None:
         await reorder(conn, "categories", category_id, payload.sequence)
     return await fetch_category(conn, category_id)
@@ -339,7 +341,7 @@ async def delete_category(category_id: int, request: Request):
         raise HTTPException(status_code=404, detail="Category not found")
     if await transaction_references_category(conn, category_id):
         raise HTTPException(status_code=409, detail="Category has expense transactions")
-    await conn.prepare("DELETE FROM categories WHERE id = ?").bind(category_id).run()
+    await conn.prepare("DELETE FROM categories WHERE workspace_id = ? AND id = ?").bind(conn.workspace_id, category_id).run()
 
 
 @router.post("/transactions", status_code=201, response_model=Transaction)
@@ -373,9 +375,10 @@ async def create_transaction(payload: TransactionCreate, request: Request):
 
     result = (
         await conn.prepare(
-            "INSERT INTO transactions (type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO transactions (workspace_id, type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(
+            conn.workspace_id,
             payload.type,
             payload.account_id,
             category_id,
@@ -404,9 +407,10 @@ async def create_transfer(payload: TransactionCreate, request: Request):
     description = payload.description if payload.description != "" else None
     result = (
         await conn.prepare(
-            "INSERT INTO transactions (type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)"
+            "INSERT INTO transactions (workspace_id, type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?)"
         )
         .bind(
+            conn.workspace_id,
             "transfer",
             payload.account_id,
             payload.related_account_id,
@@ -532,7 +536,7 @@ async def update_transaction(transaction_id: int, payload: TransactionUpdate, re
 
     await (
         conn.prepare(
-            "UPDATE transactions SET type = ?, account_id = ?, category_id = ?, related_account_id = ?, amount = ?, counterparty = ?, description = ?, occurred_at = ? WHERE id = ?"
+            "UPDATE transactions SET type = ?, account_id = ?, category_id = ?, related_account_id = ?, amount = ?, counterparty = ?, description = ?, occurred_at = ? WHERE workspace_id = ? AND id = ?"
         )
         .bind(
             transaction_type,
@@ -543,6 +547,7 @@ async def update_transaction(transaction_id: int, payload: TransactionUpdate, re
             counterparty,
             description,
             occurred_at,
+            conn.workspace_id,
             transaction_id,
         )
         .run()
@@ -556,4 +561,4 @@ async def delete_transaction(transaction_id: int, request: Request):
     existing = await fetch_transaction(conn, transaction_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    await conn.prepare("DELETE FROM transactions WHERE id = ?").bind(transaction_id).run()
+    await conn.prepare("DELETE FROM transactions WHERE workspace_id = ? AND id = ?").bind(conn.workspace_id, transaction_id).run()

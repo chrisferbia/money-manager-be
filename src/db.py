@@ -4,8 +4,17 @@ from typing import Optional
 from fastapi import Request
 
 
+class WorkspaceConnection:
+    def __init__(self, connection, workspace_id: int):
+        self.connection = connection
+        self.workspace_id = workspace_id
+
+    def prepare(self, sql: str):
+        return self.connection.prepare(sql)
+
+
 def db(request: Request):
-    return request.scope["env"].money_manager
+    return WorkspaceConnection(request.scope["env"].money_manager, request.state.workspace_id)
 
 
 async def list_transaction_descriptions(conn, q: str = "", limit: int = 20):
@@ -14,13 +23,13 @@ async def list_transaction_descriptions(conn, q: str = "", limit: int = 20):
             """
             SELECT DISTINCT TRIM(description) AS description
             FROM transactions
-            WHERE TRIM(description) <> ''
+            WHERE workspace_id = ? AND TRIM(description) <> ''
               AND INSTR(LOWER(TRIM(description)), LOWER(?)) > 0
             ORDER BY description COLLATE NOCASE, description
             LIMIT ?
             """
         )
-        .bind(q.strip(), limit)
+        .bind(conn.workspace_id, q.strip(), limit)
         .all()
     )
     return [row["description"] for row in result.results]
@@ -29,9 +38,9 @@ async def list_transaction_descriptions(conn, q: str = "", limit: int = 20):
 async def fetch_account(conn, account_id: int):
     row = (
         await conn.prepare(
-            "SELECT id, name, type, sequence, valuation_mode, created_at FROM accounts WHERE id = ?"
+            "SELECT id, name, type, sequence, valuation_mode, created_at FROM accounts WHERE workspace_id = ? AND id = ?"
         )
-        .bind(account_id)
+        .bind(conn.workspace_id, account_id)
         .first()
     )
     return row
@@ -39,11 +48,11 @@ async def fetch_account(conn, account_id: int):
 
 async def account_name_taken(conn, name: str, exclude_id: Optional[int] = None) -> bool:
     if exclude_id is None:
-        row = await conn.prepare("SELECT id FROM accounts WHERE name = ?").bind(name).first()
+        row = await conn.prepare("SELECT id FROM accounts WHERE workspace_id = ? AND name = ?").bind(conn.workspace_id, name).first()
     else:
         row = (
-            await conn.prepare("SELECT id FROM accounts WHERE name = ? AND id != ?")
-            .bind(name, exclude_id)
+            await conn.prepare("SELECT id FROM accounts WHERE workspace_id = ? AND name = ? AND id != ?")
+            .bind(conn.workspace_id, name, exclude_id)
             .first()
         )
     return row is not None
@@ -52,9 +61,9 @@ async def account_name_taken(conn, name: str, exclude_id: Optional[int] = None) 
 async def fetch_category(conn, category_id: int):
     row = (
         await conn.prepare(
-            "SELECT id, name, type, sequence, monthly_budget, created_at FROM categories WHERE id = ?"
+            "SELECT id, name, type, sequence, monthly_budget, created_at FROM categories WHERE workspace_id = ? AND id = ?"
         )
-        .bind(category_id)
+        .bind(conn.workspace_id, category_id)
         .first()
     )
     return row
@@ -62,11 +71,11 @@ async def fetch_category(conn, category_id: int):
 
 async def category_name_taken(conn, name: str, exclude_id: Optional[int] = None) -> bool:
     if exclude_id is None:
-        row = await conn.prepare("SELECT id FROM categories WHERE name = ?").bind(name).first()
+        row = await conn.prepare("SELECT id FROM categories WHERE workspace_id = ? AND name = ?").bind(conn.workspace_id, name).first()
     else:
         row = (
-            await conn.prepare("SELECT id FROM categories WHERE name = ? AND id != ?")
-            .bind(name, exclude_id)
+            await conn.prepare("SELECT id FROM categories WHERE workspace_id = ? AND name = ? AND id != ?")
+            .bind(conn.workspace_id, name, exclude_id)
             .first()
         )
     return row is not None
@@ -76,8 +85,8 @@ async def next_sequence(conn, table: str) -> int:
     if table not in {"accounts", "categories"}:
         raise ValueError("Unsupported sequence table")
     row = await conn.prepare(
-        f"SELECT COALESCE(MAX(sequence), 0) + 1 AS sequence FROM {table}"
-    ).first()
+        f"SELECT COALESCE(MAX(sequence), 0) + 1 AS sequence FROM {table} WHERE workspace_id = ?"
+    ).bind(conn.workspace_id).first()
     return row["sequence"]
 
 
@@ -86,16 +95,16 @@ async def reorder(conn, table: str, item_id: int, requested_sequence: int):
         raise ValueError("Unsupported sequence table")
 
     rows = await conn.prepare(
-        f"SELECT id FROM {table} ORDER BY sequence, id"
-    ).all()
+        f"SELECT id FROM {table} WHERE workspace_id = ? ORDER BY sequence, id"
+    ).bind(conn.workspace_id).all()
     ordered_ids = [row["id"] for row in rows.results if row["id"] != item_id]
     position = min(max(requested_sequence, 1), len(rows.results))
     ordered_ids.insert(position - 1, item_id)
 
     for sequence, row_id in enumerate(ordered_ids, start=1):
         await (
-            conn.prepare(f"UPDATE {table} SET sequence = ? WHERE id = ?")
-            .bind(sequence, row_id)
+            conn.prepare(f"UPDATE {table} SET sequence = ? WHERE workspace_id = ? AND id = ?")
+            .bind(sequence, conn.workspace_id, row_id)
             .run()
         )
 
@@ -103,9 +112,9 @@ async def reorder(conn, table: str, item_id: int, requested_sequence: int):
 async def fetch_transaction(conn, transaction_id: int):
     row = (
         await conn.prepare(
-            "SELECT id, type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at, created_at, transaction_subtype FROM transactions WHERE id = ?"
+            "SELECT id, type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at, created_at, transaction_subtype FROM transactions WHERE workspace_id = ? AND id = ?"
         )
-        .bind(transaction_id)
+        .bind(conn.workspace_id, transaction_id)
         .first()
     )
     return row
@@ -125,9 +134,10 @@ async def insert_transaction(
 ):
     result = (
         await conn.prepare(
-            "INSERT INTO transactions (type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at, transaction_subtype, source_message_id) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO transactions (workspace_id, type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at, transaction_subtype, source_message_id) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)"
         )
         .bind(
+            conn.workspace_id,
             type_,
             account_id,
             category_id,
@@ -146,27 +156,27 @@ async def insert_transaction(
 async def fetch_transaction_by_source_message_id(conn, source_message_id: str):
     return (
         await conn.prepare(
-            "SELECT id, type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at, created_at, transaction_subtype FROM transactions WHERE source_message_id = ?"
+            "SELECT id, type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at, created_at, transaction_subtype FROM transactions WHERE workspace_id = ? AND source_message_id = ?"
         )
-        .bind(source_message_id)
+        .bind(conn.workspace_id, source_message_id)
         .first()
     )
 
 
 async def account_exists(conn, account_id: int) -> bool:
-    row = await conn.prepare("SELECT id FROM accounts WHERE id = ?").bind(account_id).first()
+    row = await conn.prepare("SELECT id FROM accounts WHERE workspace_id = ? AND id = ?").bind(conn.workspace_id, account_id).first()
     return row is not None
 
 
 async def category_exists(conn, category_id: int) -> bool:
-    row = await conn.prepare("SELECT id FROM categories WHERE id = ?").bind(category_id).first()
+    row = await conn.prepare("SELECT id FROM categories WHERE workspace_id = ? AND id = ?").bind(conn.workspace_id, category_id).first()
     return row is not None
 
 
 async def category_matches_type(conn, category_id: int, type_: str) -> bool:
     row = (
-        await conn.prepare("SELECT id FROM categories WHERE id = ? AND type = ?")
-        .bind(category_id, type_)
+        await conn.prepare("SELECT id FROM categories WHERE workspace_id = ? AND id = ? AND type = ?")
+        .bind(conn.workspace_id, category_id, type_)
         .first()
     )
     return row is not None
@@ -175,9 +185,9 @@ async def category_matches_type(conn, category_id: int, type_: str) -> bool:
 async def transaction_references_account(conn, account_id: int) -> bool:
     row = (
         await conn.prepare(
-            "SELECT id FROM transactions WHERE account_id = ? OR related_account_id = ? LIMIT 1"
+            "SELECT id FROM transactions WHERE workspace_id = ? AND (account_id = ? OR related_account_id = ?) LIMIT 1"
         )
-        .bind(account_id, account_id)
+        .bind(conn.workspace_id, account_id, account_id)
         .first()
     )
     return row is not None
@@ -185,8 +195,8 @@ async def transaction_references_account(conn, account_id: int) -> bool:
 
 async def transaction_references_category(conn, category_id: int) -> bool:
     row = (
-        await conn.prepare("SELECT id FROM transactions WHERE category_id = ? LIMIT 1")
-        .bind(category_id)
+        await conn.prepare("SELECT id FROM transactions WHERE workspace_id = ? AND category_id = ? LIMIT 1")
+        .bind(conn.workspace_id, category_id)
         .first()
     )
     return row is not None
@@ -203,8 +213,8 @@ async def list_transactions(
     sql = (
         "SELECT id, type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at, created_at, transaction_subtype FROM transactions"
     )
-    clauses = []
-    params = []
+    clauses = ["workspace_id = ?"]
+    params = [conn.workspace_id]
 
     if account_id is not None:
         clauses.append("(account_id = ? OR related_account_id = ?)")
@@ -223,8 +233,7 @@ async def list_transactions(
         clauses.append("occurred_at <= ?")
         params.append(to)
 
-    if clauses:
-        sql += " WHERE " + " AND ".join(clauses)
+    sql += " WHERE " + " AND ".join(clauses)
     sql += " ORDER BY occurred_at DESC, id DESC"
 
     query = conn.prepare(sql)
@@ -253,10 +262,10 @@ async def account_balance(conn, account_id: int):
                 END
             ), 0) AS balance
             FROM transactions
-            WHERE account_id = ? OR related_account_id = ?
+            WHERE workspace_id = ? AND (account_id = ? OR related_account_id = ?)
             """
         )
-        .bind(account_id, account_id, account_id, account_id, account_id, account_id)
+        .bind(account_id, account_id, account_id, account_id, conn.workspace_id, account_id, account_id)
         .first()
     )
     return 0 if row is None or row["balance"] is None else row["balance"]
@@ -287,8 +296,8 @@ def build_savings_balance_history(month_changes, month_keys):
 
 async def savings_balance_history(conn, months: int = 12):
     account_row = await conn.prepare(
-        "SELECT COUNT(*) AS count FROM accounts WHERE type = 'savings'"
-    ).first()
+        "SELECT COUNT(*) AS count FROM accounts WHERE workspace_id = ? AND type = 'savings'"
+    ).bind(conn.workspace_id).first()
     result = await conn.prepare(
         """
         SELECT
@@ -305,13 +314,13 @@ async def savings_balance_history(conn, months: int = 12):
                 END
             ), 0) AS change
         FROM transactions t
-        LEFT JOIN accounts source ON source.id = t.account_id
-        LEFT JOIN accounts destination ON destination.id = t.related_account_id
-        WHERE source.type = 'savings' OR destination.type = 'savings'
+        LEFT JOIN accounts source ON source.id = t.account_id AND source.workspace_id = t.workspace_id
+        LEFT JOIN accounts destination ON destination.id = t.related_account_id AND destination.workspace_id = t.workspace_id
+        WHERE t.workspace_id = ? AND (source.type = 'savings' OR destination.type = 'savings')
         GROUP BY SUBSTR(t.occurred_at, 1, 7)
         ORDER BY month
         """
-    ).all()
+    ).bind(conn.workspace_id).all()
     month_keys = recent_month_keys(months)
     return {
         "account_count": 0 if account_row is None else account_row["count"],
@@ -321,8 +330,8 @@ async def savings_balance_history(conn, months: int = 12):
 
 async def list_accounts_with_balance(conn):
     rows = await conn.prepare(
-        "SELECT id, name, type, sequence, valuation_mode, created_at FROM accounts ORDER BY sequence, id"
-    ).all()
+        "SELECT id, name, type, sequence, valuation_mode, created_at FROM accounts WHERE workspace_id = ? ORDER BY sequence, id"
+    ).bind(conn.workspace_id).all()
     accounts = []
     for account in rows.results:
         balance = await account_balance(conn, account["id"])
@@ -334,10 +343,10 @@ async def expenses_by_category(conn, from_: Optional[str] = None, to: Optional[s
     sql = """
         SELECT c.id, c.name, COALESCE(SUM(t.amount), 0) AS total
         FROM categories c
-        JOIN transactions t ON t.category_id = c.id
-        WHERE t.type = 'expense'
+        JOIN transactions t ON t.category_id = c.id AND t.workspace_id = c.workspace_id
+        WHERE c.workspace_id = ? AND t.type = 'expense'
     """
-    params = []
+    params = [conn.workspace_id]
     if from_ is not None:
         sql += " AND t.occurred_at >= ?"
         params.append(from_)
@@ -355,6 +364,6 @@ async def expenses_by_category(conn, from_: Optional[str] = None, to: Optional[s
 
 async def recent_transactions(conn, limit: int = 5):
     result = await conn.prepare(
-        "SELECT id, type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at, created_at, transaction_subtype FROM transactions ORDER BY occurred_at DESC, id DESC LIMIT ?"
-    ).bind(limit).all()
+        "SELECT id, type, account_id, category_id, related_account_id, amount, counterparty, description, occurred_at, created_at, transaction_subtype FROM transactions WHERE workspace_id = ? ORDER BY occurred_at DESC, id DESC LIMIT ?"
+    ).bind(conn.workspace_id, limit).all()
     return result.results

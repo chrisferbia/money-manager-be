@@ -61,7 +61,7 @@ def make_message(raw):
 def make_database(with_bca=True):
     database = FakeD1(SCHEMA)
     if with_bca:
-        database.connection.execute("INSERT INTO accounts (name, type) VALUES ('BCA', 'cash')")
+        database.connection.execute("INSERT INTO accounts (workspace_id, name, type) VALUES (1, 'BCA', 'cash')")
         database.connection.commit()
     return database
 
@@ -83,7 +83,6 @@ def test_virtual_account_import_uses_total_payment_including_fee(total_payment, 
     assert parsed.amount == expected_amount
 
     database = make_database()
-    database.connection.execute("INSERT INTO categories (name, type) VALUES ('Other', 'expense')")
     database.connection.commit()
     run_import(database, raw)
     transaction = database.connection.execute(

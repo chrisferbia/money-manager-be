@@ -2,6 +2,8 @@
 .venv-workers/
 .wrangler/
 python_modules/
+.dev.vars
+backups/
 __pycache__/
 *.pyc
 .claude/

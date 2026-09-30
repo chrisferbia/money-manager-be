@@ -8,7 +8,7 @@ from email.utils import parseaddr
 from html.parser import HTMLParser
 import re
 
-from db import fetch_transaction_by_source_message_id, insert_transaction
+from db import WorkspaceConnection, fetch_transaction_by_source_message_id, insert_transaction
 
 
 BCA_SENDER = "bca@bca.co.id"
@@ -338,9 +338,9 @@ def _now_iso() -> str:
 async def _find_import(conn, message_id: str):
     return (
         await conn.prepare(
-            "SELECT id, status, transaction_id FROM email_imports WHERE message_id = ?"
+            "SELECT id, status, transaction_id FROM email_imports WHERE workspace_id = ? AND message_id = ?"
         )
-        .bind(message_id)
+        .bind(conn.workspace_id, message_id)
         .first()
     )
 
@@ -348,9 +348,10 @@ async def _find_import(conn, message_id: str):
 async def _insert_import_log(conn, parsed: ParsedBcaEmail, status: str, reason: str | None):
     result = (
         await conn.prepare(
-            "INSERT INTO email_imports (message_id, sender, recipient, subject, received_at, status, reason, raw_size, reference_number, transaction_subtype) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO email_imports (workspace_id, message_id, sender, recipient, subject, received_at, status, reason, raw_size, reference_number, transaction_subtype) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(
+            conn.workspace_id,
             parsed.message_id,
             parsed.sender,
             parsed.recipient,
@@ -372,9 +373,9 @@ async def _update_import_log(
 ):
     await (
         conn.prepare(
-            "UPDATE email_imports SET status = ?, reason = ?, transaction_id = ? WHERE id = ?"
+            "UPDATE email_imports SET status = ?, reason = ?, transaction_id = ? WHERE workspace_id = ? AND id = ?"
         )
-        .bind(status, reason, transaction_id, import_id)
+        .bind(status, reason, transaction_id, conn.workspace_id, import_id)
         .run()
     )
 
@@ -424,6 +425,9 @@ def _event_metadata(message) -> ParsedBcaEmail:
 
 
 async def process_email(message, env):
+    # Historical parser tests use the reserved demo workspace. The Worker email
+    # entrypoint is disabled until recipient-to-workspace routing is implemented.
+    conn = WorkspaceConnection(env.money_manager, 1)
     metadata = _event_metadata(message)
     raw = None
     try:
@@ -450,10 +454,9 @@ async def process_email(message, env):
                     parsed.message_id = metadata.message_id
             except Exception:
                 parsed = metadata
-        await _record_review(env.money_manager, parsed, str(exc))
+        await _record_review(conn, parsed, str(exc))
         return
 
-    conn = env.money_manager
     if parsed.message_id:
         existing = await _find_import(conn, parsed.message_id)
         if existing:
@@ -485,8 +488,8 @@ async def process_email(message, env):
     import_id = await _insert_import_log(conn, parsed, "processing", None)
     try:
         account = (
-            await conn.prepare("SELECT id FROM accounts WHERE name = ?")
-            .bind(BCA_ACCOUNT_NAME)
+            await conn.prepare("SELECT id FROM accounts WHERE workspace_id = ? AND name = ?")
+            .bind(conn.workspace_id, BCA_ACCOUNT_NAME)
             .first()
         )
         if account is None:
@@ -496,8 +499,8 @@ async def process_email(message, env):
             INCOME_CATEGORY_NAME if parsed.direction == "income" else EXPENSE_CATEGORY_NAME
         )
         category = (
-            await conn.prepare("SELECT id FROM categories WHERE name = ? AND type = ?")
-            .bind(category_name, parsed.direction)
+            await conn.prepare("SELECT id FROM categories WHERE workspace_id = ? AND name = ? AND type = ?")
+            .bind(conn.workspace_id, category_name, parsed.direction)
             .first()
         )
         if category is None:

@@ -127,9 +127,9 @@ async def account_holdings(conn, account_id: int):
             "SELECT h.id, h.account_id, h.coin_id, h.name, h.symbol, h.quantity, "
             "p.price_idr, p.provider_updated_at, p.fetched_at "
             "FROM crypto_holdings h LEFT JOIN crypto_prices p ON p.coin_id = h.coin_id "
-            "WHERE h.account_id = ? ORDER BY h.name COLLATE NOCASE, h.id"
+            "WHERE h.workspace_id = ? AND h.account_id = ? ORDER BY h.name COLLATE NOCASE, h.id"
         )
-        .bind(account_id)
+        .bind(conn.workspace_id, account_id)
         .all()
     )
     now = datetime.now(timezone.utc)

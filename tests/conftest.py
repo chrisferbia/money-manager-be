@@ -2,10 +2,15 @@ import socket
 import subprocess
 import sys
 import time
+import json
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import jwt
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from fake_d1 import InProcessRequests, create_client
 
@@ -23,8 +28,12 @@ def find_free_port():
 
 
 @pytest.fixture(scope="session")
-def initialize_local_db():
-    """Create the local D1 schema once for the test session."""
+def initialize_local_db(tmp_path_factory):
+    """Create an isolated local D1 schema for Worker smoke tests."""
+    configuration = json.loads((REPO_ROOT / "wrangler.jsonc").read_text())
+    if configuration["d1_databases"][0].get("remote") is not False:
+        pytest.skip("Worker smoke tests require the default D1 binding to be local")
+    persist_path = tmp_path_factory.mktemp("worker-d1")
     subprocess.run(
         [
             "npx.cmd",
@@ -34,16 +43,19 @@ def initialize_local_db():
             "execute",
             D1_DATABASE_NAME,
             "--local",
+            "--persist-to",
+            str(persist_path),
             "--file",
             "db_init.sql",
         ],
         cwd=REPO_ROOT,
         check=True,
     )
+    return persist_path
 
 
 @contextmanager
-def pywrangler_dev_server():
+def pywrangler_dev_server(persist_path, public_key):
     """Context manager to start and stop the pywrangler dev server."""
     port = find_free_port()
 
@@ -55,6 +67,14 @@ def pywrangler_dev_server():
             "dev",
             "--port",
             str(port),
+            "--persist-to",
+            str(persist_path),
+            "--var",
+            "CLERK_ISSUER:https://test.clerk.example",
+            "--var",
+            "CLERK_AUTHORIZED_PARTIES:http://localhost:5173",
+            "--var",
+            "CLERK_JWT_KEY:" + public_key.replace("\n", "\\n"),
         ],
         cwd=REPO_ROOT,
         stdout=subprocess.PIPE,
@@ -94,17 +114,45 @@ def pywrangler_dev_server():
 @pytest.fixture(scope="session")
 def inprocess_app():
     from app import app
+    from auth import require_workspace
+    from fastapi import Request
+
+    async def demo_workspace(request: Request):
+        request.state.workspace_id = int(request.headers.get("X-Test-Workspace", "1"))
+        return request.state.workspace_id
+
+    app.dependency_overrides[require_workspace] = demo_workspace
 
     database, client = create_client(app, (REPO_ROOT / "db_init.sql").read_text())
     with client:
         yield database, client
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture(scope="session")
 def worker_server(initialize_local_db):
-    """Yield one real Worker's port for explicit Worker smoke tests."""
-    with pywrangler_dev_server() as port:
-        yield port
+    """Yield one real local Worker and a test-only Clerk session issuer."""
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public_key = private_key.public_key().public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode()
+
+    def token(subject):
+        now = datetime.now(timezone.utc)
+        return jwt.encode(
+            {
+                "sub": subject,
+                "iss": "https://test.clerk.example",
+                "azp": "http://localhost:5173",
+                "iat": int(now.timestamp()),
+                "exp": int((now + timedelta(minutes=10)).timestamp()),
+            },
+            private_key,
+            algorithm="RS256",
+        )
+
+    with pywrangler_dev_server(initialize_local_db, public_key) as port:
+        yield port, token
 
 
 @pytest.fixture(scope="session")

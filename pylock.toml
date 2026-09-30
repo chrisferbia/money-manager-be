@@ -18,6 +18,17 @@ version = "4.14.2"
 wheels = [{ url = "https://files.pythonhosted.org/packages/da/35/f2287558c17e29fafc8ef3daf819bb9834061cfa43bff8014f7df7f63bdc/anyio-4.14.2-py3-none-any.whl", upload-time = 2026-07-12T20:29:05Z, size = 125813, hashes = { sha256 = "9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494" } }]
 
 [[packages]]
+name = "cffi"
+version = "1.17.1"
+marker = "platform_python_implementation != 'PyPy'"
+wheels = [{ url = "https://cdn.jsdelivr.net/pyodide/v0.28.3/full/cffi-1.17.1-cp313-cp313-pyodide_2025_0_wasm32.whl", hashes = { sha256 = "06e0410221cf8e0c94af920a242c756deb8353e211feac8306ea199df51a7d94" } }]
+
+[[packages]]
+name = "cryptography"
+version = "45.0.5"
+wheels = [{ url = "https://cdn.jsdelivr.net/pyodide/v0.28.3/full/cryptography-45.0.5-cp313-abi3-pyodide_2025_0_wasm32.whl", hashes = { sha256 = "207b7e58449b841c2bd6433a37d85b40e619aa6cf37775c5890faca310d5bc15" } }]
+
+[[packages]]
 name = "fastapi"
 version = "0.141.1"
 wheels = [{ url = "https://files.pythonhosted.org/packages/cb/03/10388a42375ee7e4ac9b94eb2c5c569c8b5795e377e701c9ac3ad63de890/fastapi-0.141.1-py3-none-any.whl", upload-time = 2026-07-29T17:18:04Z, size = 131954, hashes = { sha256 = "bfb91aa2d334c61cb35ba9a116fc123b3d3df31640b801cf57a7a78ec3f603b3" } }]
@@ -41,6 +52,12 @@ version = "3.0.2"
 wheels = [{ url = "https://cdn.jsdelivr.net/pyodide/v0.28.3/full/markupsafe-3.0.2-cp313-cp313-pyodide_2025_0_wasm32.whl", hashes = { sha256 = "31a48bf0c5914d64d442175520d803c6488681882ff152c3a07838736b1f3b60" } }]
 
 [[packages]]
+name = "pycparser"
+version = "3.0"
+marker = "platform_python_implementation != 'PyPy'"
+wheels = [{ url = "https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl", upload-time = 2026-01-21T14:26:50Z, size = 48172, hashes = { sha256 = "b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992" } }]
+
+[[packages]]
 name = "pydantic"
 version = "2.10.6"
 wheels = [
@@ -52,6 +69,11 @@ wheels = [
 name = "pydantic-core"
 version = "2.27.2"
 wheels = [{ url = "https://cdn.jsdelivr.net/pyodide/v0.28.3/full/pydantic_core-2.27.2-cp313-cp313-pyodide_2025_0_wasm32.whl", hashes = { sha256 = "3695112ef99b222e48e0a2837b055ec818b43ff5e2e0802e99f5d6d2dd36af7b" } }]
+
+[[packages]]
+name = "pyjwt"
+version = "2.15.1"
+wheels = [{ url = "https://files.pythonhosted.org/packages/50/ca/44de4e75f8aadc457f0634be3b542815078ded46dca30efb960edeecad6e/pyjwt-2.15.1-py3-none-any.whl", upload-time = 2026-09-28T18:40:41Z, size = 33860, hashes = { sha256 = "42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193" } }]
 
 [[packages]]
 name = "python-multipart"

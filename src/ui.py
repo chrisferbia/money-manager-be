@@ -1,9 +1,10 @@
 import calendar
 import jinja2
 import templates
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import ValidationError
+from auth import require_workspace
 
 from api import (
     create_account,
@@ -27,7 +28,7 @@ from models import (
     TransactionUpdate,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_workspace)])
 
 jinja_env = jinja2.Environment(
     loader=jinja2.DictLoader(templates.TEMPLATES), autoescape=True
@@ -187,8 +188,8 @@ async def ui_delete_account(account_id: int, request: Request):
 async def ui_list_categories(request: Request):
     conn = db(request)
     result = await conn.prepare(
-        "SELECT id, name, type, sequence, created_at FROM categories ORDER BY sequence, id"
-    ).all()
+        "SELECT id, name, type, sequence, created_at FROM categories WHERE workspace_id = ? ORDER BY sequence, id"
+    ).bind(conn.workspace_id).all()
     return jinja_env.get_template("categories_list.html").render(
         categories=result.results, error=None, form_name="", form_type="expense"
     )
@@ -213,8 +214,8 @@ async def ui_create_category(request: Request):
 
     conn = db(request)
     result = await conn.prepare(
-        "SELECT id, name, type, sequence, created_at FROM categories ORDER BY sequence, id"
-    ).all()
+        "SELECT id, name, type, sequence, created_at FROM categories WHERE workspace_id = ? ORDER BY sequence, id"
+    ).bind(conn.workspace_id).all()
     return jinja_env.get_template("categories_list.html").render(
         categories=result.results, error=error, form_name=name, form_type=type_
     )
@@ -264,8 +265,8 @@ async def ui_delete_category(category_id: int, request: Request):
     except HTTPException as exc:
         conn = db(request)
         result = await conn.prepare(
-            "SELECT id, name, type, sequence, created_at FROM categories ORDER BY sequence, id"
-        ).all()
+            "SELECT id, name, type, sequence, created_at FROM categories WHERE workspace_id = ? ORDER BY sequence, id"
+        ).bind(conn.workspace_id).all()
         return jinja_env.get_template("categories_list.html").render(
             categories=result.results, error=exc.detail, form_name="", form_type="expense"
         )
@@ -276,10 +277,10 @@ async def ui_delete_category(category_id: int, request: Request):
 async def ui_list_transactions(request: Request):
     conn = db(request)
     transactions = await list_transactions(conn)
-    accounts = await conn.prepare("SELECT id, name FROM accounts ORDER BY sequence, id").all()
+    accounts = await conn.prepare("SELECT id, name FROM accounts WHERE workspace_id = ? ORDER BY sequence, id").bind(conn.workspace_id).all()
     categories = await conn.prepare(
-        "SELECT id, name, type FROM categories ORDER BY sequence, id"
-    ).all()
+        "SELECT id, name, type FROM categories WHERE workspace_id = ? ORDER BY sequence, id"
+    ).bind(conn.workspace_id).all()
     return jinja_env.get_template("transactions_list.html").render(
         transactions=transactions,
         accounts=accounts.results,
@@ -335,10 +336,10 @@ async def ui_create_transaction(request: Request):
 
     conn = db(request)
     transactions = await list_transactions(conn)
-    accounts = await conn.prepare("SELECT id, name FROM accounts ORDER BY sequence, id").all()
+    accounts = await conn.prepare("SELECT id, name FROM accounts WHERE workspace_id = ? ORDER BY sequence, id").bind(conn.workspace_id).all()
     categories = await conn.prepare(
-        "SELECT id, name, type FROM categories ORDER BY sequence, id"
-    ).all()
+        "SELECT id, name, type FROM categories WHERE workspace_id = ? ORDER BY sequence, id"
+    ).bind(conn.workspace_id).all()
     return jinja_env.get_template("transactions_list.html").render(
         transactions=transactions,
         accounts=accounts.results,
@@ -363,10 +364,10 @@ async def ui_edit_transaction_form(transaction_id: int, request: Request):
     transaction = await fetch_transaction(conn, transaction_id)
     if transaction is None:
         return RedirectResponse("/ui/transactions", status_code=303)
-    accounts = await conn.prepare("SELECT id, name FROM accounts ORDER BY sequence, id").all()
+    accounts = await conn.prepare("SELECT id, name FROM accounts WHERE workspace_id = ? ORDER BY sequence, id").bind(conn.workspace_id).all()
     categories = await conn.prepare(
-        "SELECT id, name, type FROM categories ORDER BY sequence, id"
-    ).all()
+        "SELECT id, name, type FROM categories WHERE workspace_id = ? ORDER BY sequence, id"
+    ).bind(conn.workspace_id).all()
     return jinja_env.get_template("transaction_edit.html").render(
         transaction=transaction,
         accounts=accounts.results,
@@ -409,10 +410,10 @@ async def ui_update_transaction(transaction_id: int, request: Request):
     transaction = await fetch_transaction(conn, transaction_id)
     if transaction is None:
         return RedirectResponse("/ui/transactions", status_code=303)
-    accounts = await conn.prepare("SELECT id, name FROM accounts ORDER BY sequence, id").all()
+    accounts = await conn.prepare("SELECT id, name FROM accounts WHERE workspace_id = ? ORDER BY sequence, id").bind(conn.workspace_id).all()
     categories = await conn.prepare(
-        "SELECT id, name, type FROM categories ORDER BY sequence, id"
-    ).all()
+        "SELECT id, name, type FROM categories WHERE workspace_id = ? ORDER BY sequence, id"
+    ).bind(conn.workspace_id).all()
     return jinja_env.get_template("transaction_edit.html").render(
         transaction={
             **transaction,

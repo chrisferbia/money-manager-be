@@ -1,6 +1,6 @@
 # Money Manager Backend
 
-A personal finance application built with Python, FastAPI, and Cloudflare Workers, using Cloudflare D1 for storage. It provides a JSON API, a server-rendered web interface, and an email handler that imports supported BCA transaction notifications.
+A personal finance application built with Python, FastAPI, and Cloudflare Workers, using Cloudflare D1 for storage. The public Worker now requires Clerk sign-in and gives each user one isolated personal workspace.
 
 ## Features
 
@@ -9,7 +9,7 @@ A personal finance application built with Python, FastAPI, and Cloudflare Worker
 - Calculate account balances from transaction history and summarize expenses by category.
 - Track manually entered crypto quantities in Investment accounts, with cached CoinGecko IDR prices and market-value balances.
 - View a dashboard with balances, income, expenses, net change, and recent transactions. Filter activity by month or date range; balances remain all-time totals.
-- Import supported BCA emails with Message-ID deduplication and an import audit log.
+- Keep accounts, categories, transactions, holdings, and reports isolated by signed-in user.
 - Deploy separate public and private Workers, each connected to its own D1 database.
 
 ## Stack
@@ -40,7 +40,7 @@ The current [Wrangler configuration](wrangler.jsonc) defines:
 | Default (public) | `money-manager-be` | `money-manager` | `money_manager` |
 | `private` | `private-money-manager-be` | `private-money-manager` | `money_manager` |
 
-**Both bindings currently set `"remote": true`.** Running `dev` with these settings connects to remote D1, so application writes change the database used by the corresponding deployed Worker.
+**Both bindings currently set `"remote": true`.** Running `dev` with these settings connects to remote D1, so application writes change the database used by the corresponding deployed Worker. The private database is outside this SaaS migration; do not run the new migration or deploy this version with `--env private`.
 
 For local development with local data, set `"remote": false` (or remove the property) on the selected binding in `wrangler.jsonc`. The default binding is under `d1_databases`; the private binding is under `env.private.d1_databases`.
 
@@ -56,11 +56,25 @@ npx wrangler d1 execute money-manager --local --file db_init.sql
 npx wrangler d1 execute private-money-manager --env private --local --file db_init.sql
 ```
 
-`db_init.sql` creates the current schema and seeds eight accounts and eighteen categories. It does not seed transactions or record migration history.
+`db_init.sql` creates the current schema and an unowned demo workspace (ID 1) with sample accounts and categories. A newly signed-in user gets a separate empty personal workspace and starter categories. It does not seed transactions or record migration history.
 
 **Do not apply all historical migrations after initialization.** The migration chain assumes an existing schema, and `db_init.sql` already includes columns added by migrations `0001` through `0007`. For an existing database, follow the [schema and migration caveat](docs/d1-commands.md#existing-schema-and-initialization-caveat) before applying changes.
 
-### 4. Start the Worker
+### 4. Configure sign-in for the public Worker
+
+Configure these backend Worker bindings before using the protected API:
+
+| Name | Value |
+| --- | --- |
+| `CLERK_ISSUER` | `https://topical-meerkat-6998.clerk.accounts.dev` |
+| `CLERK_AUTHORIZED_PARTIES` | `http://localhost:5173,https://money-manager-fe.azamines.workers.dev` |
+| `CLERK_JWT_KEY` | The Clerk instance's **public** PEM verification key, with newlines preserved or encoded as `\\n` |
+
+Never configure or commit the Clerk secret key in either project. The backend accepts only RS256-signed tokens from this issuer and one of the listed frontend origins. Missing configuration returns 503; missing or invalid tokens return 401. `POST /me/bootstrap` creates the signed-in user's one-person workspace, and the frontend calls it before loading private data.
+
+For the **existing public D1 only**, take a backup and review `migrations/0010_saas_workspaces.sql` before applying it once. It moves existing public demo rows into unowned demo workspace 1 and adds workspace-scoped keys. It does not touch the private D1. Do not deploy the new backend before that migration, because its queries require the new columns. Do not apply this migration to a fresh database initialized from the current `db_init.sql`.
+
+### 5. Start the Worker
 
 ```powershell
 # Default environment
@@ -70,7 +84,7 @@ uv run pywrangler dev --port 8787
 uv run pywrangler dev --env private --port 8787
 ```
 
-Open [the dashboard](http://localhost:8787) or [interactive API documentation](http://localhost:8787/docs). `npm run dev` and `npm start` also start the default environment.
+The API now requires a signed Clerk session. `npm run dev` and `npm start` also start the default environment. For local testing, change the public D1 binding to local (`"remote": false`) first; otherwise development requests can write to remote D1.
 
 If Windows development fails with missing vendored dependencies such as `jinja2`, see the [PyWrangler Windows troubleshooting guide](docs/pywrangler-windows-vendoring-fix.md).
 
@@ -145,15 +159,19 @@ For example, send this JSON to `POST /transactions`, using existing account and 
 
 ## BCA email imports
 
+The Worker email entrypoint is disabled in this multi-user version because an incoming email has no trustworthy user-to-workspace routing. The parser remains in the codebase and under test. Do not deploy this version to the private Worker if you rely on its existing email import; that Worker and database have not been migrated.
+
+Historical importer behavior follows for reference:
+
 The Worker's email entrypoint processes supported BCA notification formats, including transfers, QRIS payments, virtual-account payments, pocket transfers, and cardless cash withdrawals. Imported records use `income` or `expense`, with a separate `transaction_subtype`; email pocket transfers and withdrawals are currently recorded as expenses.
 
 To use imports:
 
 1. Configure Cloudflare Email Routing to deliver messages to the intended Worker.
 2. Create an account named **`BCA`** in that Worker's database.
-3. Ensure an income category named **`Other Income`** and an expense category named **`Other`** exist.
+3. Ensure an income category named **`Other Income`** and an expense category named **`Other Expense`** exist.
 
-The initialization script includes `Other Income`, but creates neither the `BCA` account nor the `Other` expense category (`Other Expense` is a different name).
+The initialization script includes those categories, but does not create the `BCA` account.
 
 Messages need a Message-ID and a supported successful transaction status. The importer stores outcomes and reasons in `email_imports`, links successful imports to transactions, and logs results to the Worker console. Unsupported or invalid messages are recorded for review; missing account/category mappings produce failed imports. Repeated Message-IDs are skipped, including previously logged failures; there is no automatic retry workflow.
 
@@ -174,7 +192,7 @@ uv run pytest --cov=src --cov-report=term-missing
 
 The default suite excludes the `worker` marker. Integration tests use FastAPI's test client with an in-memory SQLite D1 adapter; they do not start PyWrangler.
 
-Real Worker smoke tests initialize local D1 and start PyWrangler. **Set the default binding's `remote` property to `false` before running these tests**, since the server uses `wrangler.jsonc` and the persistence test creates an account.
+Real Worker smoke tests initialize an isolated local D1 and start PyWrangler with a temporary test signing key. **Set the default binding's `remote` property to `false` before running these tests.** The tests skip otherwise, and the private D1 is never used. Restore the setting afterward.
 
 ```powershell
 uv run pytest -m worker
@@ -192,21 +210,18 @@ npx wrangler whoami
 npx wrangler login
 ```
 
-Deploy the selected environment:
+After migrating and configuring only the public database/Worker, deploy the default environment:
 
 ```powershell
 # Public Worker
 uv run pywrangler deploy
-
-# Private Worker
-uv run pywrangler deploy --env private
 ```
 
-`npm run deploy` deploys the default public Worker. For Cloudflare Workers Builds, use the matching command above as each Worker's deploy command. The private Worker requires `--env private`.
+`npm run deploy` deploys the default public Worker. Do not deploy this version with `--env private`; its D1 schema and email workflow are intentionally untouched.
 
 Deployment does not initialize D1 or apply migrations. See the [D1 command guide](docs/d1-commands.md) for remote initialization, queries, migration management, and backups.
 
-The application implements no authentication or per-user data isolation. `private` selects a separate Worker and database; it does not add access control. CORS currently allows `http://localhost:5173` and HTTPS subdomains of `azamines.workers.dev`, as configured in `src/app.py`.
+The public API requires Clerk session tokens and scopes data to each user's workspace. This repository's private Worker is not a deployment target for this migration. CORS allows `http://localhost:5173` and `https://money-manager-fe.azamines.workers.dev`, as configured in `src/app.py`.
 
 ## Project layout
 
