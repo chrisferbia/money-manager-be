@@ -3,7 +3,6 @@
 Run from the backend root: python tests/manual/import_preview.py
 Never use this test adapter as a deployed Worker entrypoint.
 """
-import asyncio
 from pathlib import Path
 import sys
 
@@ -17,9 +16,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from app import app
 from auth import require_workspace
-from db import WorkspaceConnection
 from fake_d1 import FakeD1, InProcessApp
-from import_review import stage_bca_email
 
 
 async def preview_workspace(request: Request):
@@ -33,9 +30,6 @@ database.connection.executescript("""
     INSERT INTO accounts (id,workspace_id,name,type) VALUES (1,1,'BCA','bank');
     INSERT INTO categories (id,workspace_id,name,type) VALUES (1,1,'Food','expense'),(2,1,'Shopping','expense'),(3,1,'Salary','income'),(4,1,'Other','expense');
 """)
-sample = (ROOT / "tests/fixtures/bca-review-fictional.eml").read_bytes()
-follow_up = sample.replace(b"review-001", b"review-002").replace(b"REVIEW-001", b"REVIEW-002").replace(b"12:00:00", b"13:00:00")
-asyncio.run(stage_bca_email(WorkspaceConnection(database, 1), follow_up, 1))
 app.dependency_overrides[require_workspace] = preview_workspace
 
 

@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import api
 import auth
 import demo
-import import_review
+import email_tools
 import ui
 
 
@@ -22,5 +22,5 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(demo.router)
 app.include_router(api.router)
-app.include_router(import_review.router)
+app.include_router(email_tools.router)
 app.include_router(ui.router)

@@ -1,4 +1,4 @@
-"""Exercise the real Python Worker and D1 batch using an explicitly local binding."""
+"""Exercise the real Python Worker parser preview with an explicitly local binding."""
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import socket
@@ -36,7 +36,7 @@ def main():
                 if process.poll() is not None:
                     break
                 try:
-                    response = requests.get(base + "/imports", timeout=1)
+                    response = requests.post(base + "/email-tools/bca/preview", timeout=1)
                     if response.status_code == 401:
                         ready = True
                         break
@@ -45,7 +45,7 @@ def main():
                 time.sleep(0.5)
             if not ready:
                 raise RuntimeError("Local Worker failed to start: " + log_path.read_text(encoding="utf-8", errors="replace")[-4000:])
-            print("Local Worker ready; verifying staged approval and D1 transaction", flush=True)
+            print("Local Worker ready; verifying parser previews never change the ledger", flush=True)
             def call(method, path, **kwargs):
                 response = requests.request(method, base + path, headers=headers, timeout=20, **kwargs)
                 assert response.ok, f"{path}: {response.status_code} {response.text}"
@@ -54,24 +54,20 @@ def main():
             account = call("POST", "/accounts", json={"name": "BCA", "type": "bank"})
             food = next(category for category in call("GET", "/categories") if category["name"] == "Food")
             raw = (ROOT / "tests/fixtures/bca-review-fictional.eml").read_bytes()
-            staged = call("POST", f"/imports/bca?account_id={account['id']}", data=raw)
-            item = staged["item"]
-            assert staged["duplicate"] is False
-            assert call("GET", "/transactions") == []
-            assert call("GET", "/imports")[0]["status"] == "pending"
-            payload = {"account_id": account["id"], "category_id": food["id"], "save_rule": True}
-            approved = call("POST", f"/imports/{item['id']}/approve", json=payload)
-            assert approved["status"] == "imported"
-            assert call("POST", f"/imports/{item['id']}/approve", json=payload)["transaction_id"] == approved["transaction_id"]
-            assert len(call("GET", "/transactions")) == 1
-            assert call("GET", "/imports/rules")[0]["category_id"] == food["id"]
-            assert call("POST", f"/imports/bca?account_id={account['id']}", data=raw)["duplicate"] is True
-            other = raw.replace(b"review-001", b"review-002").replace(b"REVIEW-001", b"REVIEW-002").replace(b"12:00:00", b"13:00:00")
-            suggested = call("POST", f"/imports/bca?account_id={account['id']}", data=other)["item"]
-            assert suggested["suggested_category_id"] == food["id"]
-            assert suggested["suggestion_source"] == "rule"
-            assert call("POST", f"/imports/{suggested['id']}/dismiss")["status"] == "dismissed"
-            print("PASS: real Worker parsing, D1 batch approval, rule suggestions, retries and skip", flush=True)
+            call("POST", "/transactions", json={"type": "expense", "account_id": account["id"], "category_id": food["id"], "amount": 100})
+            paths = ["/accounts?include_balance=true", "/categories", "/transactions", "/reports/expenses-by-category"]
+            before = {path: call("GET", path) for path in paths}
+            for _ in range(3):
+                result = call("POST", "/email-tools/bca/preview", data=raw)
+                assert result["persisted"] is False
+                assert result["format_valid"] is True
+                assert result["parsed"]["amount"] == 35000
+                assert result["default_category"] == "Other"
+            malformed = requests.post(base + "/email-tools/bca/preview", headers=headers, data=b"not an email", timeout=20)
+            assert malformed.status_code == 400
+            assert {path: call("GET", path) for path in paths} == before
+            assert requests.post(base + "/imports/1/approve", headers=headers, json={"account_id": account["id"], "category_id": food["id"]}, timeout=20).status_code == 404
+            print("PASS: real Worker parsing, repeat/error safety, unchanged balances/ledger/reports and disabled approval", flush=True)
         finally:
             subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, check=False)
 

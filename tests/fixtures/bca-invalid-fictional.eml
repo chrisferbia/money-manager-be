@@ -1,0 +1,6 @@
+From: BCA <bca@bca.co.id>
+To: fictional@example.invalid
+Subject: Fictional unsupported format
+Content-Type: text/plain; charset=utf-8
+
+This fictional email intentionally has no transaction fields.
