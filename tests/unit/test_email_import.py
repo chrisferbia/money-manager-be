@@ -333,6 +333,21 @@ def test_ac8_missing_default_category_is_recorded_as_failed():
     assert tuple(failure) == ("failed", "Category 'Other' was not found")
 
 
+def test_expenses_do_not_silently_use_other_expense_instead_of_other():
+    database = make_database()
+    database.connection.execute(
+        "UPDATE categories SET name = 'Other Expense' WHERE workspace_id = 1 AND name = 'Other'"
+    )
+    database.connection.commit()
+
+    run_import(database, bca_email())
+
+    assert database.connection.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 0
+    assert tuple(database.connection.execute(
+        "SELECT status, reason FROM email_imports"
+    ).fetchone()) == ("failed", "Category 'Other' was not found")
+
+
 def test_ac7_missing_message_id_is_logged_without_transaction():
     database = make_database()
 

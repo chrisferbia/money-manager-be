@@ -1,0 +1,17 @@
+From: BCA <bca@bca.co.id>
+To: fictional@example.invalid
+Message-ID: <fictional-bca-review-001@example.invalid>
+Subject: Internet Transaction Journal
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<html><body><table>
+<tr><td>Status:</td><td>Successful</td></tr>
+<tr><td>Transaction Date:</td><td>04 Oct 2026 12:00:00 WIB</td></tr>
+<tr><td>Transfer Type:</td><td>Transfer to BCA Account</td></tr>
+<tr><td>Transfer Currency:</td><td>IDR</td></tr>
+<tr><td>Beneficiary Name:</td><td>KEDAI CONTOH (FICTIONAL)</td></tr>
+<tr><td>Transfer Amount:</td><td>IDR 35,000.00</td></tr>
+<tr><td>Remarks:</td><td>Lunch - fictional test data</td></tr>
+<tr><td>Reference No.:</td><td>FICTIONAL-REVIEW-001</td></tr>
+</table></body></html>

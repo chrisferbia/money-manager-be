@@ -283,7 +283,7 @@ def parse_bca_email(raw: bytes) -> ParsedBcaEmail:
         amount=amount,
         counterparty=counterparty,
         remarks=fields.get("Remarks") or fields.get("Description"),
-        reference_number=fields.get("Reference No."),
+        reference_number=fields.get("Reference No.") or fields.get("RRN"),
         raw_size=len(raw),
         transaction_subtype=transaction_subtype,
     )

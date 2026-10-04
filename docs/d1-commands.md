@@ -81,6 +81,7 @@ Execute a SQL file (for fresh initialization, see the migration caveat below):
 
 ```powershell
 npx wrangler d1 execute money-manager --remote --file db_init.sql
+npx wrangler d1 execute private-money-manager --remote --file .\migrations\0010_saas_workspaces.sql
 ```
 
 ## Inspect Schema

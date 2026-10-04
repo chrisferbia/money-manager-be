@@ -1,0 +1,12 @@
+{
+    "name": "money-manager-import-review-test",
+    "main": "src/entry.py",
+    "compatibility_date": "2025-11-02",
+    "compatibility_flags": ["python_workers", "python_dedicated_snapshot"],
+    "d1_databases": [{
+        "binding": "money_manager",
+        "database_name": "money-manager-import-review-test",
+        "database_id": "00000000-0000-0000-0000-000000000011",
+        "remote": false
+    }]
+}
