@@ -159,9 +159,7 @@ For example, send this JSON to `POST /transactions`, using existing account and 
 
 ## BCA email imports
 
-The Worker email entrypoint is disabled in this multi-user version because an incoming email has no trustworthy user-to-workspace routing. The parser remains in the codebase and under test. Do not deploy this version to the private Worker if you rely on its existing email import; that Worker and database have not been migrated.
-
-Historical importer behavior follows for reference:
+The Worker email entrypoint calls the existing automatic importer. It uses workspace **1** in the Worker's connected database, not a workspace inferred from the sender. The existing Cloudflare Email Routing rule must deliver incoming mail only to the intended private Worker. This is the personal email-import workflow, not per-user inbound routing or Smart import review.
 
 The Worker's email entrypoint processes supported BCA notification formats, including transfers, QRIS payments, virtual-account payments, pocket transfers, and cardless cash withdrawals. Imported records use `income` or `expense`, with a separate `transaction_subtype`; email pocket transfers and withdrawals are currently recorded as expenses.
 
@@ -169,9 +167,8 @@ To use imports:
 
 1. Configure Cloudflare Email Routing to deliver messages to the intended Worker.
 2. Create an account named **`BCA`** in that Worker's database.
-3. Ensure an income category named **`Other Income`** and an expense category named **`Other Expense`** exist.
+3. Ensure an income category named **`Other Income`** and an expense category named **`Other`** exist in workspace 1.
 
-The initialization script includes those categories, but does not create the `BCA` account.
 
 Messages need a Message-ID and a supported successful transaction status. The importer stores outcomes and reasons in `email_imports`, links successful imports to transactions, and logs results to the Worker console. Unsupported or invalid messages are recorded for review; missing account/category mappings produce failed imports. Repeated Message-IDs are skipped, including previously logged failures; there is no automatic retry workflow.
 
@@ -221,7 +218,7 @@ uv run pywrangler deploy
 
 Deployment does not initialize D1 or apply migrations. See the [D1 command guide](docs/d1-commands.md) for remote initialization, queries, migration management, and backups.
 
-The public API requires Clerk session tokens and scopes data to each user's workspace. This repository's private Worker is not a deployment target for this migration. CORS allows `http://localhost:5173` and `https://money-manager-fe.azamines.workers.dev`, as configured in `src/app.py`.
+The HTTP API requires Clerk session tokens and scopes data to each user's workspace. CORS allows `http://localhost:5173` and `https://money-manager-fe.azamines.workers.dev`, as configured in `src/app.py`.
 
 ## Project layout
 

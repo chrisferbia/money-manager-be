@@ -425,8 +425,6 @@ def _event_metadata(message) -> ParsedBcaEmail:
 
 
 async def process_email(message, env):
-    # Historical parser tests use the reserved demo workspace. The Worker email
-    # entrypoint is disabled until recipient-to-workspace routing is implemented.
     conn = WorkspaceConnection(env.money_manager, 1)
     metadata = _event_metadata(message)
     raw = None

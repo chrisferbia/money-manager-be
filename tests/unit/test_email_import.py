@@ -60,6 +60,11 @@ def make_message(raw):
 
 def make_database(with_bca=True):
     database = FakeD1(SCHEMA)
+    # Match the private importer's existing category, not the public demo seed.
+    database.connection.execute(
+        "UPDATE categories SET name = 'Other' WHERE workspace_id = 1 AND name = 'Other Expense'"
+    )
+    database.connection.commit()
     if with_bca:
         database.connection.execute("INSERT INTO accounts (workspace_id, name, type) VALUES (1, 'BCA', 'cash')")
         database.connection.commit()
@@ -184,7 +189,7 @@ def test_ac2_ac3_imports_outgoing_transaction_with_reference():
     assert transaction[7] == "2026-08-29T07:18:52Z"
     assert transaction[8] == "<bca-test@example.com>"
     assert transaction[9] == "transfer"
-    assert category[0] == "Other Expense"
+    assert category[0] == "Other"
     assert tuple(import_log) == ("imported", transaction[0], "00B3F2F7-FF98-4BD1-8135-05E55BC4191D")
 
 
@@ -317,7 +322,7 @@ def test_ac8_missing_account_is_recorded_as_failed():
 def test_ac8_missing_default_category_is_recorded_as_failed():
     database = make_database()
     database.connection.execute(
-        "DELETE FROM categories WHERE name = 'Other Expense' AND type = 'expense'"
+        "DELETE FROM categories WHERE name = 'Other' AND type = 'expense'"
     )
     database.connection.commit()
 
@@ -325,7 +330,7 @@ def test_ac8_missing_default_category_is_recorded_as_failed():
 
     assert database.connection.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 0
     failure = database.connection.execute("SELECT status, reason FROM email_imports").fetchone()
-    assert tuple(failure) == ("failed", "Category 'Other Expense' was not found")
+    assert tuple(failure) == ("failed", "Category 'Other' was not found")
 
 
 def test_ac7_missing_message_id_is_logged_without_transaction():

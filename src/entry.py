@@ -10,6 +10,6 @@ class Default(WorkerEntrypoint):
         return await asgi.fetch(app, request.js_object, self.env)
 
     async def email(self, message, env=None, ctx=None):
-        # Inbound mail is not tenant-addressed yet. Fail closed until routing and
-        # sender verification are implemented for a specific workspace.
-        raise RuntimeError("Email imports are disabled")
+        from email_import import process_email
+
+        await process_email(message, env if env is not None else self.env)
