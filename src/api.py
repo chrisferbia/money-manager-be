@@ -230,17 +230,24 @@ async def manually_refresh_crypto_prices(account_id: int, request: Request):
     if account["valuation_mode"] != "crypto":
         raise HTTPException(status_code=400, detail="Account does not track crypto holdings")
     coins = await conn.prepare(
-        "SELECT DISTINCT coin_id FROM crypto_holdings WHERE workspace_id = ? AND account_id = ?"
-    ).bind(conn.workspace_id, account_id).all()
+        "SELECT DISTINCT coin_id FROM crypto_holdings WHERE workspace_id = ?"
+    ).bind(conn.workspace_id).all()
     coin_ids = [row["coin_id"] for row in coins.results]
     refreshed = await refresh_prices(conn, request.scope["env"], coin_ids, force=True)
     if coin_ids and not refreshed:
         raise HTTPException(status_code=503, detail="Could not refresh crypto prices. The price provider is unavailable or returned no valid quotes. Last known prices were kept; try again later.")
+    accounts = await conn.prepare(
+        "SELECT id FROM accounts WHERE workspace_id = ? AND valuation_mode = 'crypto' ORDER BY id"
+    ).bind(conn.workspace_id).all()
+    holdings_by_account = {
+        row["id"]: await account_holdings(conn, row["id"]) for row in accounts.results
+    }
     return {
         "requested_count": len(coin_ids),
         "refreshed_count": len(refreshed),
         "failed_coin_ids": sorted(set(coin_ids) - refreshed),
-        "holdings": await account_holdings(conn, account_id),
+        "holdings": holdings_by_account[account_id],
+        "holdings_by_account": holdings_by_account,
     }
 
 

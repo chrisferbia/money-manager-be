@@ -1,6 +1,7 @@
 """Crypto holdings and CoinGecko IDR market prices."""
 
 import json
+import logging
 import re
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -10,6 +11,33 @@ PRICE_TTL_SECONDS = 600
 MARKET_USER_AGENT = "MoneyManager/1.0 (personal finance crypto holdings and IDR valuation)"
 COIN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,99}$")
 QUANTITY_RE = re.compile(r"^(?:0|[1-9]\d{0,11})(?:\.\d{1,18})?$")
+logger = logging.getLogger(__name__)
+
+
+class MarketProviderError(RuntimeError):
+    """Provider diagnostics without response bodies, URLs or credentials."""
+
+    def __init__(self, reason: str, http_status: int, provider_code: int | None = None):
+        self.reason = reason
+        self.http_status = http_status
+        self.provider_code = provider_code
+        super().__init__(
+            f"CoinGecko request failed: reason={reason} http_status={http_status} "
+            f"provider_code={provider_code}"
+        )
+
+
+def _provider_error_code(body: str) -> int | None:
+    # Only allow a numeric error code out of the untrusted provider response.
+    try:
+        data = json.loads(body)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    status = data.get("status")
+    code = status.get("error_code") if isinstance(status, dict) else data.get("error_code")
+    return code if type(code) is int and 0 <= code <= 999999 else None
 
 
 def normalize_quantity(value: str) -> str:
@@ -63,9 +91,15 @@ async def _fetch_market_json(path: str, env):
         to_js({"headers": market_headers(env)}, dict_converter=Object.fromEntries),
     )
     if not response.ok:
-        body = await response.text()
-        raise RuntimeError(f"CoinGecko returned HTTP {response.status}: {body[:300]}")
-    return json.loads(await response.text())
+        try:
+            provider_code = _provider_error_code(await response.text())
+        except Exception:
+            provider_code = None
+        raise MarketProviderError("http_error", int(response.status), provider_code)
+    try:
+        return json.loads(await response.text())
+    except (ValueError, TypeError):
+        raise MarketProviderError("invalid_json", int(response.status)) from None
 
 
 async def search_coins(query: str, env):
@@ -82,6 +116,7 @@ async def search_coins(query: str, env):
 
 
 async def refresh_prices(conn, env, coin_ids: list[str], *, force: bool = False):
+    """Reuse fresh quotes; only the manual-refresh endpoint may force a fetch."""
     if not coin_ids:
         return set()
     now = datetime.now(timezone.utc)
@@ -89,6 +124,11 @@ async def refresh_prices(conn, env, coin_ids: list[str], *, force: bool = False)
     cached = await conn.prepare("SELECT coin_id, fetched_at FROM crypto_prices").all()
     fetched_at = {row["coin_id"]: row["fetched_at"] for row in cached.results}
     stale = sorted({coin_id for coin_id in coin_ids if force or not _is_fresh(fetched_at.get(coin_id), now, ttl_seconds)})
+    if not stale:
+        # Page loads, polling and holding changes must not fetch fresh prices.
+        return set()
+    mode = "manual" if force else "automatic"
+    key_configured = bool(getattr(env, "COINGECKO_API_KEY", None))
     refreshed = set()
     for start in range(0, len(stale), 100):
         batch = stale[start : start + 100]
@@ -97,20 +137,44 @@ async def refresh_prices(conn, env, coin_ids: list[str], *, force: bool = False)
                 f"simple/price?{urlencode({'ids': ','.join(batch), 'vs_currencies': 'idr', 'include_last_updated_at': 'true'})}",
                 env,
             )
-        except Exception:
+        except Exception as exc:
+            # Do not log exception text/tracebacks: these can contain request secrets.
+            logger.warning(
+                "Crypto price refresh failed: provider=coingecko mode=%s reason=%s "
+                "http_status=%s provider_code=%s api_key_configured=%s exception_type=%s; "
+                "cached prices kept",
+                mode,
+                exc.reason if isinstance(exc, MarketProviderError) else "transport_or_runtime_error",
+                exc.http_status if isinstance(exc, MarketProviderError) else None,
+                exc.provider_code if isinstance(exc, MarketProviderError) else None,
+                key_configured,
+                type(exc).__name__,
+            )
             # Keep the last known price; callers distinguish stale and missing prices.
             continue
         if not isinstance(data, dict):
+            logger.warning(
+                "Crypto price refresh returned unusable data: provider=coingecko mode=%s "
+                "reason=invalid_response_shape api_key_configured=%s; cached prices kept",
+                mode, key_configured,
+            )
             continue
+        invalid_reasons = set()
         for coin_id in batch:
+            if coin_id not in data:
+                invalid_reasons.add("missing_quote")
+                continue
             quote = data.get(coin_id, {})
             if not isinstance(quote, dict):
+                invalid_reasons.add("invalid_quote_shape")
                 continue
             try:
                 price = Decimal(str(quote.get("idr")))
             except InvalidOperation:
+                invalid_reasons.add("invalid_idr_price")
                 continue
             if not price.is_finite() or price <= 0:
+                invalid_reasons.add("invalid_idr_price")
                 continue
             provider_time = quote.get("last_updated_at")
             try:
@@ -120,6 +184,7 @@ async def refresh_prices(conn, env, coin_ids: list[str], *, force: bool = False)
                     else None
                 )
             except (ValueError, OverflowError, OSError):
+                invalid_reasons.add("invalid_provider_timestamp")
                 continue
             await (
                 conn.prepare(
@@ -132,6 +197,12 @@ async def refresh_prices(conn, env, coin_ids: list[str], *, force: bool = False)
                 .run()
             )
             refreshed.add(coin_id)
+        if invalid_reasons:
+            logger.warning(
+                "Crypto price refresh returned unusable quotes: provider=coingecko mode=%s "
+                "reason=%s api_key_configured=%s; cached prices kept for rejected quotes",
+                mode, ",".join(sorted(invalid_reasons)), key_configured,
+            )
     return refreshed
 
 

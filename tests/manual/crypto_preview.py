@@ -27,7 +27,10 @@ async def preview_workspace(request: Request):
 
 
 async def fictional_market(path, env):
-    return {"bitcoin": {"idr": 1200000000, "last_updated_at": int(datetime.now(timezone.utc).timestamp())}}
+    return {
+        "bitcoin": {"idr": 1200000000, "last_updated_at": int(datetime.now(timezone.utc).timestamp())},
+        "ethereum": {"idr": 60000000, "last_updated_at": int(datetime.now(timezone.utc).timestamp())},
+    }
 
 
 if __name__ == "__main__":
@@ -35,11 +38,18 @@ if __name__ == "__main__":
     database.reset()
     database.connection.executescript("""
         INSERT INTO accounts (id,workspace_id,name,type,valuation_mode) VALUES (1,1,'Fictional crypto wallet','investment','crypto');
+        INSERT INTO accounts (id,workspace_id,name,type,valuation_mode) VALUES (2,1,'Fictional second wallet','investment','crypto');
         INSERT INTO categories (id,workspace_id,name,type) VALUES (1,1,'Other','expense');
         INSERT INTO crypto_holdings (id,workspace_id,account_id,coin_id,name,symbol,quantity) VALUES (1,1,1,'bitcoin','Bitcoin','BTC','0.01');
+        INSERT INTO crypto_holdings (id,workspace_id,account_id,coin_id,name,symbol,quantity) VALUES (2,1,2,'bitcoin','Bitcoin','BTC','0.02');
+        INSERT INTO crypto_holdings (id,workspace_id,account_id,coin_id,name,symbol,quantity) VALUES (3,1,2,'ethereum','Ethereum','ETH','0.5');
     """)
     database.connection.execute(
         "INSERT INTO crypto_prices (coin_id,price_idr,fetched_at) VALUES ('bitcoin','1000000000',?)",
+        (datetime.now(timezone.utc).isoformat(),),
+    )
+    database.connection.execute(
+        "INSERT INTO crypto_prices (coin_id,price_idr,fetched_at) VALUES ('ethereum','50000000',?)",
         (datetime.now(timezone.utc).isoformat(),),
     )
     database.connection.commit()

@@ -212,13 +212,24 @@ After migrating and configuring only the public database/Worker, deploy the defa
 ```powershell
 # Public Worker
 uv run pywrangler deploy
+
+# deploy directly with worker name
+uv run pywrangler deploy --env private --name money-manager-be
 ```
 
-`npm run deploy` deploys the default public Worker. Do not deploy this version with `--env private`; its D1 schema and email workflow are intentionally untouched.
+`npm run deploy` deploys the default public Worker.
 
 Deployment does not initialize D1 or apply migrations. See the [D1 command guide](docs/d1-commands.md) for remote initialization, queries, migration management, and backups.
 
 The HTTP API requires Clerk session tokens and scopes data to each user's workspace. CORS allows `http://localhost:5173` and `https://money-manager-fe.azamines.workers.dev`, as configured in `src/app.py`.
+
+## Worker logs
+
+Stream logs from the deployed public Worker in a readable format:
+
+```powershell
+npx wrangler tail money-manager-be --format pretty
+```
 
 ## Project layout
 
