@@ -36,9 +36,10 @@ from models import (
     TransactionUpdate,
     CryptoHoldingCreate,
     CryptoHoldingUpdate,
+    CryptoPriceSettings,
 )
 from domain import validate_transaction_rules, validate_transfer_rules
-from crypto import COIN_ID_RE, account_holdings, normalize_quantity, refresh_prices, search_coins
+from crypto import COIN_ID_RE, account_holdings, normalize_quantity, price_ttl_seconds, refresh_prices, search_coins
 
 router = APIRouter(dependencies=[Depends(require_workspace)])
 logger = logging.getLogger(__name__)
@@ -193,6 +194,20 @@ async def crypto_search(request: Request, q: str = Query(min_length=2, max_lengt
         raise HTTPException(status_code=503, detail="Coin search is temporarily unavailable") from exc
 
 
+@router.get("/settings/crypto-prices")
+async def get_crypto_price_settings(request: Request):
+    return {"expiry_minutes": await price_ttl_seconds(db(request)) // 60}
+
+
+@router.patch("/settings/crypto-prices")
+async def update_crypto_price_settings(payload: CryptoPriceSettings, request: Request):
+    conn = db(request)
+    await conn.prepare("UPDATE workspaces SET crypto_price_expiry_minutes = ? WHERE id = ?").bind(
+        payload.expiry_minutes, conn.workspace_id
+    ).run()
+    return {"expiry_minutes": payload.expiry_minutes}
+
+
 @router.get("/accounts/{account_id}/holdings")
 async def list_crypto_holdings(account_id: int, request: Request):
     conn = db(request)
@@ -204,6 +219,29 @@ async def list_crypto_holdings(account_id: int, request: Request):
     coins = await conn.prepare("SELECT coin_id FROM crypto_holdings WHERE workspace_id = ? AND account_id = ?").bind(conn.workspace_id, account_id).all()
     await refresh_prices(conn, request.scope["env"], [row["coin_id"] for row in coins.results])
     return await account_holdings(conn, account_id)
+
+
+@router.post("/accounts/{account_id}/holdings/refresh-prices")
+async def manually_refresh_crypto_prices(account_id: int, request: Request):
+    conn = db(request)
+    account = await fetch_account(conn, account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if account["valuation_mode"] != "crypto":
+        raise HTTPException(status_code=400, detail="Account does not track crypto holdings")
+    coins = await conn.prepare(
+        "SELECT DISTINCT coin_id FROM crypto_holdings WHERE workspace_id = ? AND account_id = ?"
+    ).bind(conn.workspace_id, account_id).all()
+    coin_ids = [row["coin_id"] for row in coins.results]
+    refreshed = await refresh_prices(conn, request.scope["env"], coin_ids, force=True)
+    if coin_ids and not refreshed:
+        raise HTTPException(status_code=503, detail="Could not refresh crypto prices. The price provider is unavailable or returned no valid quotes. Last known prices were kept; try again later.")
+    return {
+        "requested_count": len(coin_ids),
+        "refreshed_count": len(refreshed),
+        "failed_coin_ids": sorted(set(coin_ids) - refreshed),
+        "holdings": await account_holdings(conn, account_id),
+    }
 
 
 @router.post("/accounts/{account_id}/holdings", status_code=201)

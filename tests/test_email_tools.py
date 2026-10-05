@@ -87,12 +87,12 @@ def test_forwarded_sender_can_be_tested_like_automatic_parser(inprocess_app):
 
 def test_preview_is_available_without_accounts_or_review_tables(inprocess_app):
     database, client = inprocess_app
-    # Test-only tables: the parser tester must not require the former migration.
-    database.connection.executescript("DROP TABLE import_reviews; DROP TABLE merchant_rules;")
-    try:
-        assert client.post(PATH, content=RAW).status_code == 200
-    finally:
-        database.connection.executescript((Path(__file__).parents[1] / "migrations/0011_import_review.sql").read_text())
+    assert database.connection.execute(
+        "SELECT name FROM sqlite_master WHERE name IN ('import_reviews', 'merchant_rules')"
+    ).fetchall() == []
+    before = snapshot(database)
+    assert client.post(PATH, content=RAW).status_code == 200
+    assert snapshot(database) == before
 
 
 @pytest.mark.parametrize("raw, subtype, direction, category", [

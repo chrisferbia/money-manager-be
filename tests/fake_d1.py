@@ -40,24 +40,12 @@ class FakeD1:
     def prepare(self, sql):
         return FakeD1Query(self, sql)
 
-    async def batch(self, statements):
-        results = []
-        with self.connection:
-            for statement in statements:
-                cursor = self.connection.execute(statement.sql, statement.parameters)
-                rows = [dict(row) for row in cursor.fetchall()] if cursor.description else []
-                results.append(SimpleNamespace(
-                    results=rows,
-                    meta=SimpleNamespace(last_row_id=cursor.lastrowid, changes=cursor.rowcount),
-                ))
-        return results
-
     def reset(self):
         self.connection.executescript(
-            "DELETE FROM import_reviews; DELETE FROM merchant_rules; "
             "DELETE FROM email_imports; DELETE FROM crypto_holdings; DELETE FROM crypto_prices; "
             "DELETE FROM transactions; DELETE FROM categories; DELETE FROM accounts; "
             "DELETE FROM workspaces WHERE id != 1; DELETE FROM users;"
+            "UPDATE workspaces SET crypto_price_expiry_minutes = 10 WHERE id = 1;"
         )
         self.connection.commit()
 

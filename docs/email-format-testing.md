@@ -6,7 +6,15 @@ The response displays amount in IDR, date, direction, subtype, merchant, descrip
 
 No raw email, parsed record, import log, merchant rule or transaction is stored. Repeated tests are safe and do not affect balances or reports. Preview responses use `Cache-Control: no-store`. The browser holds results only until the user chooses another file, starts another test, or leaves Settings.
 
-The former `/imports` staging, approval, history and rule endpoints are no longer mounted. Existing import-review tables and migration history are preserved without accessing or deleting any deployed data. The tester does not require those tables or any new migration.
+The former `/imports` staging, approval, history and rule endpoints are no longer mounted. Fresh databases no longer create review tables. Existing databases can remove them with `migrations/0012_remove_import_review.sql`; keep `0011` as migration history. The tester does not require either review table.
+
+## Remove obsolete review tables
+
+Deploy the preview-only backend and frontend before applying cleanup. Back up each exact target database first. `0012` deletes all pending/approved/skipped review records and saved merchant rules, plus their indexes and triggers. It removes the trigger attached to `accounts` first so future account deletions remain valid. Already-approved ledger transactions and automatic `email_imports` records are preserved, along with users, workspaces, accounts, categories and crypto data. The SQL can be run repeatedly or on a fresh schema.
+
+An SQL backup can restore the removed review records; applying `0011` alone restores only the old schema, not deleted data. Do not restore a whole database backup over newer transactions without reviewing the impact.
+
+If applying this file directly with `d1 execute --file`, record its completion in `d1_migrations` afterward. Also mark `0011_import_review.sql` completed if its objects were previously verified but the migration was applied manually, otherwise a future migration run could recreate retired tables. Do not run all pending migrations without reconciling older manually applied changes first. Keep both historical files in the repository.
 
 ## Automatic imports are unchanged
 

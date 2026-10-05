@@ -12,10 +12,6 @@ class WorkspaceConnection:
     def prepare(self, sql: str):
         return self.connection.prepare(sql)
 
-    async def batch(self, statements):
-        return await self.connection.batch(statements)
-
-
 def db(request: Request):
     return WorkspaceConnection(request.scope["env"].money_manager, request.state.workspace_id)
 

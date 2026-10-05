@@ -3,6 +3,11 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class CryptoPriceSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expiry_minutes: int = Field(strict=True, ge=1, le=1440)
+
+
 class AccountCreate(BaseModel):
     name: str = Field(min_length=1)
     type: str = Field(min_length=1)

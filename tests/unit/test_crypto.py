@@ -4,7 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from crypto import MARKET_USER_AGENT, market_headers, normalize_quantity, value_idr
+from crypto import MARKET_USER_AGENT, _is_fresh, market_headers, normalize_quantity, value_idr
+from datetime import datetime, timedelta, timezone
 
 
 pytestmark = pytest.mark.unit
@@ -43,3 +44,27 @@ def test_existing_database_migration_adds_crypto_schema():
     conn.executescript(migration.read_text())
     assert conn.execute("SELECT valuation_mode FROM accounts WHERE id = 1").fetchone()[0] == "ledger"
     assert conn.execute("SELECT COUNT(*) FROM crypto_holdings").fetchone()[0] == 0
+
+
+def test_freshness_uses_configured_expiry_and_handles_invalid_dates():
+    now = datetime.now(timezone.utc)
+    five_minutes_ago = (now - timedelta(minutes=5)).isoformat()
+    assert _is_fresh(five_minutes_ago, now, 600)
+    assert not _is_fresh(five_minutes_ago, now, 60)
+    assert not _is_fresh(five_minutes_ago, now, 300)
+    for value in (None, "invalid", "2020-01-01T00:00:00", (now + timedelta(seconds=1)).isoformat()):
+        assert not _is_fresh(value, now, 600)
+
+
+def test_expiry_migration_preserves_workspace_and_adds_default_with_limits():
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE workspaces (id INTEGER PRIMARY KEY, name TEXT)")
+    conn.execute("INSERT INTO workspaces VALUES (1, 'Fictional workspace')")
+    conn.executescript((Path(__file__).parents[2] / "migrations/0013_crypto_price_expiry.sql").read_text())
+    assert conn.execute("SELECT name,crypto_price_expiry_minutes FROM workspaces").fetchone() == ("Fictional workspace", 10)
+    conn.execute("INSERT INTO workspaces (id,name) VALUES (2,'New fictional workspace')")
+    assert conn.execute("SELECT crypto_price_expiry_minutes FROM workspaces WHERE id=2").fetchone()[0] == 10
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE workspaces SET crypto_price_expiry_minutes=0 WHERE id=1")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE workspaces SET crypto_price_expiry_minutes=1441 WHERE id=1")

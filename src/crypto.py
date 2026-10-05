@@ -28,14 +28,21 @@ def value_idr(quantity: str, price_idr: str) -> int:
     return int((Decimal(quantity) * Decimal(price_idr)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
-def _is_fresh(fetched_at: str | None, now: datetime) -> bool:
+def _is_fresh(fetched_at: str | None, now: datetime, ttl_seconds: int = PRICE_TTL_SECONDS) -> bool:
     if not fetched_at:
         return False
     try:
         fetched = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
-        return 0 <= (now - fetched).total_seconds() < PRICE_TTL_SECONDS
-    except ValueError:
+        return 0 <= (now - fetched).total_seconds() < ttl_seconds
+    except (ValueError, TypeError):
         return False
+
+
+async def price_ttl_seconds(conn) -> int:
+    row = await conn.prepare(
+        "SELECT crypto_price_expiry_minutes FROM workspaces WHERE id = ?"
+    ).bind(conn.workspace_id).first()
+    return row["crypto_price_expiry_minutes"] * 60 if row else PRICE_TTL_SECONDS
 
 
 def market_headers(env):
@@ -74,13 +81,15 @@ async def search_coins(query: str, env):
     ]
 
 
-async def refresh_prices(conn, env, coin_ids: list[str]):
+async def refresh_prices(conn, env, coin_ids: list[str], *, force: bool = False):
     if not coin_ids:
-        return
+        return set()
     now = datetime.now(timezone.utc)
+    ttl_seconds = await price_ttl_seconds(conn)
     cached = await conn.prepare("SELECT coin_id, fetched_at FROM crypto_prices").all()
     fetched_at = {row["coin_id"]: row["fetched_at"] for row in cached.results}
-    stale = sorted({coin_id for coin_id in coin_ids if not _is_fresh(fetched_at.get(coin_id), now)})
+    stale = sorted({coin_id for coin_id in coin_ids if force or not _is_fresh(fetched_at.get(coin_id), now, ttl_seconds)})
+    refreshed = set()
     for start in range(0, len(stale), 100):
         batch = stale[start : start + 100]
         try:
@@ -104,11 +113,14 @@ async def refresh_prices(conn, env, coin_ids: list[str]):
             if not price.is_finite() or price <= 0:
                 continue
             provider_time = quote.get("last_updated_at")
-            provider_updated_at = (
-                datetime.fromtimestamp(provider_time, timezone.utc).isoformat()
-                if isinstance(provider_time, int) and provider_time > 0
-                else None
-            )
+            try:
+                provider_updated_at = (
+                    datetime.fromtimestamp(provider_time, timezone.utc).isoformat()
+                    if isinstance(provider_time, int) and provider_time > 0
+                    else None
+                )
+            except (ValueError, OverflowError, OSError):
+                continue
             await (
                 conn.prepare(
                     "INSERT INTO crypto_prices (coin_id, price_idr, provider_updated_at, fetched_at) "
@@ -119,6 +131,8 @@ async def refresh_prices(conn, env, coin_ids: list[str]):
                 .bind(coin_id, str(price), provider_updated_at, now.isoformat())
                 .run()
             )
+            refreshed.add(coin_id)
+    return refreshed
 
 
 async def account_holdings(conn, account_id: int):
@@ -133,13 +147,14 @@ async def account_holdings(conn, account_id: int):
         .all()
     )
     now = datetime.now(timezone.utc)
+    ttl_seconds = await price_ttl_seconds(conn)
     return [
         {
             **row,
             "value_idr": value_idr(row["quantity"], row["price_idr"])
             if row["price_idr"] is not None
             else None,
-            "price_status": "fresh" if _is_fresh(row["fetched_at"], now) else (
+            "price_status": "fresh" if _is_fresh(row["fetched_at"], now, ttl_seconds) else (
                 "stale" if row["price_idr"] is not None else "unavailable"
             ),
         }
