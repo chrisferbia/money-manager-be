@@ -34,6 +34,25 @@ async def list_transaction_descriptions(conn, q: str = "", limit: int = 20):
     return [row["description"] for row in result.results]
 
 
+async def receivables_by_description(conn, account_id: int):
+    """All-time transfer-only balances. Trim names, preserving case distinctions."""
+    result = await conn.prepare("""
+        SELECT NULLIF(TRIM(description), '') AS description,
+            SUM(CASE WHEN related_account_id = ? THEN amount ELSE 0 END) AS lent,
+            SUM(CASE WHEN account_id = ? THEN amount ELSE 0 END) AS repaid,
+            SUM(CASE WHEN related_account_id = ? THEN amount ELSE 0 END
+                - CASE WHEN account_id = ? THEN amount ELSE 0 END) AS outstanding,
+            COUNT(*) AS transaction_count
+        FROM transactions
+        WHERE workspace_id = ? AND type = 'transfer'
+            AND (account_id = ? OR related_account_id = ?)
+        GROUP BY NULLIF(TRIM(description), '')
+        ORDER BY outstanding DESC, description COLLATE NOCASE, description
+    """).bind(account_id, account_id, account_id, account_id,
+               conn.workspace_id, account_id, account_id).all()
+    return {"account_id": account_id, "items": result.results}
+
+
 async def fetch_account(conn, account_id: int):
     row = (
         await conn.prepare(

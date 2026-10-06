@@ -34,6 +34,7 @@ for path, endpoint in (
     ("/transactions", api.list_transaction_route),
     ("/reports/expenses-by-category", api.report_expenses_by_category),
     ("/reports/savings-balance-history", api.report_savings_balance_history),
+    ("/reports/receivables", api.report_receivables),
     ("/accounts/{account_id}/holdings", api.list_crypto_holdings),
 ):
     router.add_api_route(path, endpoint, methods=["GET"], dependencies=[Depends(require_demo_workspace)])

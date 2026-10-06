@@ -21,6 +21,7 @@ from db import (
     next_sequence,
     reorder,
     savings_balance_history,
+    receivables_by_description,
     transaction_references_account,
     transaction_references_category,
 )
@@ -125,6 +126,13 @@ async def report_savings_balance_history(
     months: int = Query(default=12, ge=2, le=60),
 ):
     return await savings_balance_history(db(request), months)
+
+
+@router.get("/reports/receivables")
+async def report_receivables(request: Request, account_id: int = Query(gt=0)):
+    conn = db(request)
+    await _require_ledger_account(conn, account_id)
+    return await receivables_by_description(conn, account_id)
 
 
 @router.get("/accounts/{account_id}", response_model=Account)
